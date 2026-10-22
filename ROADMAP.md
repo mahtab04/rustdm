@@ -14,7 +14,7 @@ tests, documentation, and reviewable Git commits before moving on.
 - [x] Local HTTP integration tests and project Git conventions.
 - [x] Workspace folders for core, CLI, desktop UI, web, and browser adapters.
 - [x] Live speed and ETA reporting with reusable transfer metrics.
-- [ ] Download queue and persistent job history.
+- [x] Download queue and persistent job history.
 - [ ] Bandwidth limits.
 - [ ] Optional publisher-provided checksum verification.
 - [ ] Dynamic segment rebalancing and broader interoperability coverage.

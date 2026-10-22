@@ -6,8 +6,9 @@ An incremental Rust download manager: CLI first, followed by desktop UI, browser
 integration, and a web interface. The shared download engine is available as a
 library so each interface uses the same behavior.
 
-**Current milestone:** CLI foundation. Parallel HTTP downloads and validated
-resume work; queue/history and other CLI features are next.
+**Current milestone:** CLI. Parallel downloads, validated resume, live progress,
+a persistent queue, and attempt history are implemented. Bandwidth limits and
+checksum verification are next.
 
 ## Features
 
@@ -20,6 +21,7 @@ resume work; queue/history and other CLI features are next.
 - Custom request headers for cookies, referrer, and authorization.
 - Exclusive writer locking and completion that preserves existing destinations.
 - Encapsulated DownloadManager, builder-style options, and a progress observer.
+- Persistent queue with sequential execution, retry, and per-attempt history.
 
 ## Repository layout
 
@@ -94,13 +96,39 @@ although URL query parameters remain part of the saved source URL.
 Servers without usable ranges/validators use one stream. Retries restart that
 stream from zero; an interrupted non-resumable download currently requires a new
 output path. Segments are fixed at startup. Publisher hash verification, dynamic
-rebalancing, queues, desktop UI, browser capture, FTP, and media assembly are
+rebalancing, desktop UI, browser capture, FTP, and media assembly are
 future milestones. Existing `.rustidm` partial directories are detected and
 resumed in place when there is no `.rustdm` directory for the same output.
 
 Speed is measured over recent progress samples. ETA is an estimate and remains
 unknown until a nonzero speed and total file size are available. A stream retry
 that resets its byte count also resets the speed measurement.
+
+## Queue and history
+
+```powershell
+.\target\release\rustdm.exe queue add "https://example.com/first.zip" -o "first.zip"
+.\target\release\rustdm.exe queue add "https://example.com/second.zip" -o "second.zip"
+.\target\release\rustdm.exe queue list
+.\target\release\rustdm.exe queue run
+.\target\release\rustdm.exe history
+```
+
+The queue is stored in `.rustdm/queue.json` in the current directory. Use
+`--state-dir "D:\RustDMData"` to select a consistent queue from any directory.
+Output paths are resolved when adding a job, so changing directories does not
+change its destination. `queue list --json` and `history --json` support scripts.
+
+Ctrl+C pauses the active job and leaves later jobs pending. Run `queue run`
+again to resume pending/paused jobs. Failed jobs do not block later jobs; use
+`queue retry ID` followed by `queue run` to retry one. History preserves each
+terminal attempt, including failed and paused attempts. Only queued downloads
+are recorded; direct downloads remain available with either `rustdm URL -o FILE`
+or `rustdm download URL -o FILE`.
+
+Queued requests do not persist headers or URL userinfo. Use direct download for
+authenticated requests requiring those fields. Source URLs, including query
+parameters, are stored in queue/history state. See [queue behavior and recovery](docs/QUEUE.md).
 
 ## Architecture and development
 
@@ -118,7 +146,9 @@ cargo build --workspace --release --locked
 
 Integration tests use a local HTTP server and known binary data, covering
 parallel transfers, pause/resume, truncated responses, changed validators,
-invalid ranges, fallback behavior, and destination preservation. CI is configured
+invalid ranges, fallback behavior, and destination preservation. Queue tests cover
+concurrent additions, persistent state, cancellation/recovery, retry history,
+exclusive runners, and commands invoked as separate processes. CI is configured
 for Windows and Linux. Local validation was performed on Windows; the Actions
 results show the status of the configured platforms.
 

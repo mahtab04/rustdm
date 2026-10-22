@@ -18,6 +18,8 @@ when their milestones begin.
 ```mermaid
 flowchart TD
     CLI[CLI adapter] --> Manager[DownloadManager]
+    CLI --> Queue[DownloadQueue / QueueRunner]
+    Queue --> Manager
     GUI[Future desktop adapter] -.-> Manager
     Browser[Future browser adapter] -.-> Manager
     Manager --> Options[DownloadOptions]
@@ -36,7 +38,12 @@ flowchart TD
 | `crates/core/src/state.rs` | Manifest, exclusive lock, assembly, and publication |
 | `crates/core/src/transfer.rs` | Range workers and single-stream transfer |
 | `crates/core/src/metrics.rs` | Recent transfer speed and ETA measurement |
-| `apps/cli/src/main.rs` | Arguments, Ctrl+C, and exit behavior |
+| `crates/core/src/queue/model.rs` | Job states, snapshots, attempts, events, and run results |
+| `crates/core/src/queue/store.rs` | Atomic queue transactions, locks, history, and recovery |
+| `crates/core/src/queue/runner.rs` | Sequential queued-job orchestration through DownloadManager |
+| `apps/cli/src/args.rs` | Arguments, legacy syntax, and command definitions |
+| `apps/cli/src/execution.rs` | Ctrl+C, queued/direct execution, and progress events |
+| `apps/cli/src/main.rs` | Command dispatch, tabular/JSON results, and exit behavior |
 | `apps/cli/src/progress.rs` | Terminal rendering and update throttling |
 | `crates/core/src/lib.rs` | Small public API and convenience entry point |
 
@@ -94,4 +101,19 @@ bounded frequency. Other interfaces can use the same meter with their own view.
 The manifest stores URLs, size, validators, and segment layout. Request headers
 are supplied in memory and must be supplied again for authenticated resume.
 Static segments and some blocking local file I/O remain deliberate initial
-constraints; queueing and performance work belongs to the CLI milestone.
+constraints; further performance work belongs to the CLI milestone.
+
+## Persistent queue
+
+`DownloadQueue` owns a canonical state-directory path. Its short OS-locked
+transactions validate and atomically replace a versioned JSON snapshot.
+`QueueJob` exposes read-only getters and serializable snapshots. `QueueRunner`
+holds an independent exclusive session lock and composes `DownloadManager` for
+each job. Its mutable execution method prevents concurrent use of one runner.
+
+Running attempts are saved before network execution and terminal results afterward.
+The session lock allows a replacement runner to recognize and record abandoned
+attempts. Failed jobs do not block later jobs, cancellation stops before claiming
+the next job, and every retry appends history. Job-level progress events let each
+adapter reset its progress meter without putting terminal behavior in the core.
+See [queue semantics](QUEUE.md) for persistence and recovery boundaries.

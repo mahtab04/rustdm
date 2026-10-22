@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Queue and history
+
+- Added shared `DownloadQueue` and `QueueRunner` services with versioned,
+  atomic snapshots, stable IDs, absolute destinations, and per-attempt history.
+- Added `queue add`, `queue list`, `queue run`, `queue retry`, and `history`,
+  with JSON output and a global `--state-dir` option.
+- Added sequential job execution through the existing manager, recovery of
+  interrupted sessions, pause/resume, and continued processing after failed jobs.
+- Kept direct-download syntax and added an explicit `download` command.
+- Kept credentials out of queue state by rejecting queued headers and URL userinfo.
+- Added persistence, locking, retry, recovery, and CLI subprocess coverage.
+- Moved the assembly buffer to the heap to prevent Windows stack overflow when
+  download futures are composed through the queue and CLI execution layers.
+
 ### Workspace and RustDM rename
 
 - Renamed the project, executable, and GitHub repository to RustDM (Rust Download
