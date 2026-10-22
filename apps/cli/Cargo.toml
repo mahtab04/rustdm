@@ -12,6 +12,7 @@ categories = ["command-line-utilities", "network-programming"]
 anyhow.workspace = true
 clap.workspace = true
 rustdm-core = { path = "../../crates/core" }
+serde_json.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]

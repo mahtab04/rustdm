@@ -850,6 +850,7 @@ dependencies = [
  "anyhow",
  "clap",
  "rustdm-core",
+ "serde_json",
  "tempfile",
  "tokio",
 ]

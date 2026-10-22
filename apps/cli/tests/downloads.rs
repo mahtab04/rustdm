@@ -1,6 +1,6 @@
 use rustdm_core::{
-    CancellationToken, DownloadManager, DownloadOptions, Progress, ProgressObserver, download,
-    state_directory,
+    CancellationToken, DownloadManager, DownloadOptions, DownloadQueue, JobState, Progress,
+    ProgressObserver, QueueEvent, download, state_directory,
 };
 use std::{
     fs,
@@ -483,4 +483,144 @@ async fn renamed_app_resumes_legacy_rustidm_partial_files() {
     assert!(result.resumed_bytes > 0);
     assert_eq!(fs::read(output).unwrap(), *server.data);
     assert!(!legacy.exists());
+}
+
+#[tokio::test]
+async fn queued_pause_resumes_in_order_and_keeps_attempt_history() {
+    let server = Server::new(0);
+    let temp = tempfile::tempdir().unwrap();
+    let directory = temp.path().join("jobs");
+    let first = temp.path().join("first.bin");
+    let second = temp.path().join("second.bin");
+    let queue = DownloadQueue::open(&directory).unwrap();
+    let id = queue.enqueue(server.options(&first)).unwrap();
+    queue.enqueue(server.options(&second)).unwrap();
+    server.slow.store(true, Ordering::SeqCst);
+    let token = CancellationToken::new();
+    let trigger = token.clone();
+    let mut runner = queue.runner().unwrap();
+    let result = runner
+        .run(token, move |event| {
+            if let QueueEvent::Progress { job_id, progress } = event
+                && job_id == id
+                && progress.downloaded >= 2048
+            {
+                trigger.cancel();
+            }
+        })
+        .await
+        .unwrap();
+    assert!(result.cancelled);
+    assert_eq!(result.paused, 1);
+    let jobs = queue.jobs().unwrap();
+    assert_eq!(jobs[0].state(), JobState::Paused);
+    assert_eq!(jobs[1].state(), JobState::Pending);
+    assert!(!first.exists() && !second.exists());
+    drop(runner);
+    server.slow.store(false, Ordering::SeqCst);
+    let reopened = DownloadQueue::open(directory).unwrap();
+    let result = reopened
+        .runner()
+        .unwrap()
+        .run(CancellationToken::new(), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(result.completed, 2);
+    assert_eq!(fs::read(first).unwrap(), *server.data);
+    assert_eq!(fs::read(second).unwrap(), *server.data);
+    let history = reopened.history().unwrap();
+    assert_eq!(history.len(), 3);
+    assert!(history.iter().any(|entry| entry.job_id == id
+        && entry.state == JobState::Completed
+        && entry.resumed_bytes.unwrap() > 0));
+}
+
+#[tokio::test]
+async fn failed_queue_job_does_not_block_later_jobs_and_retry_keeps_history() {
+    let interrupted = Server::new(4); // Exactly one truncated response, then normal responses.
+    let healthy = Server::new(0);
+    let temp = tempfile::tempdir().unwrap();
+    let first = temp.path().join("retry-first.bin");
+    let second = temp.path().join("healthy-second.bin");
+    let queue = DownloadQueue::open(temp.path().join("jobs")).unwrap();
+    let id = queue
+        .enqueue(
+            interrupted
+                .options(&first)
+                .with_connections(1)
+                .with_retries(0),
+        )
+        .unwrap();
+    queue.enqueue(healthy.options(&second)).unwrap();
+    let result = queue
+        .runner()
+        .unwrap()
+        .run(CancellationToken::new(), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(result.failed, 1);
+    assert_eq!(result.completed, 1);
+    assert!(!first.exists());
+    assert_eq!(fs::read(second).unwrap(), *healthy.data);
+    queue.retry(id).unwrap();
+    let result = queue
+        .runner()
+        .unwrap()
+        .run(CancellationToken::new(), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(result.completed, 1);
+    assert_eq!(fs::read(first).unwrap(), *interrupted.data);
+    let attempts: Vec<_> = queue
+        .history()
+        .unwrap()
+        .into_iter()
+        .filter(|entry| entry.job_id == id)
+        .collect();
+    assert_eq!(attempts.len(), 2);
+    assert_eq!(attempts[0].state, JobState::Failed);
+    assert_eq!(attempts[1].state, JobState::Completed);
+    assert!(attempts[1].resumed_bytes.unwrap() > 0);
+}
+
+#[test]
+fn cli_queue_and_history_survive_separate_processes() {
+    let server = Server::new(0);
+    let temp = tempfile::tempdir().unwrap();
+    let state = temp.path().join("state");
+    let first = temp.path().join("cli-queue-first.bin");
+    let second = temp.path().join("cli-queue-second.bin");
+    let command = |args: &[&str]| {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_rustdm"))
+            .arg("--state-dir")
+            .arg(&state)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        output
+    };
+    for output in [&first, &second] {
+        command(&["queue", "add", &server.url, "-o", output.to_str().unwrap()]);
+    }
+    let jobs = command(&["queue", "list", "--json"]);
+    let jobs: serde_json::Value = serde_json::from_slice(&jobs.stdout).unwrap();
+    assert_eq!(jobs.as_array().unwrap().len(), 2);
+    assert_eq!(jobs[0]["state"], "pending");
+    command(&["queue", "run"]);
+    let history = command(&["history", "--json"]);
+    let history: serde_json::Value = serde_json::from_slice(&history.stdout).unwrap();
+    assert_eq!(history.as_array().unwrap().len(), 2);
+    assert_eq!(history[0]["state"], "completed");
+    assert_eq!(fs::read(first).unwrap(), *server.data);
+    assert_eq!(fs::read(second).unwrap(), *server.data);
+    assert!(command(&["queue", "run"]).status.success());
+    let unchanged_history = command(&["history", "--json"]);
+    let unchanged_history: serde_json::Value =
+        serde_json::from_slice(&unchanged_history.stdout).unwrap();
+    assert_eq!(unchanged_history.as_array().unwrap().len(), 2);
 }
