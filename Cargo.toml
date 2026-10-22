@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "apps/cli"]
+members = ["crates/core", "apps/cli", "apps/ui"]
 resolver = "3"
 
 [workspace.package]
@@ -12,6 +12,8 @@ readme = "README.md"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 fs2 = "0.4"
+eframe = { version = "0.37", default-features = false, features = ["default_fonts", "glow", "clipboard", "x11", "wayland"] }
+rfd = "0.17"
 ring = "0.17"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2"] }
 serde = { version = "1", features = ["derive"] }

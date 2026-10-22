@@ -1,10 +1,11 @@
 # Project working agreement
 
-- Build RustDM incrementally: finish the CLI milestone, then desktop UI, then
-  browser integration and a web interface. Keep the current milestone in ROADMAP.md.
+- Build RustDM incrementally: the initial CLI is released; desktop UI is the
+  current milestone, followed by browser integration and a web interface. Keep
+  the current milestone and remaining engine enhancements in ROADMAP.md.
 - Use idiomatic Rust: encapsulated structs, methods, traits at real extension
   points, composition, and ownership. Keep user interfaces out of the core engine.
-- Keep shared code in crates/core, CLI code in apps/cli, future desktop code in
+- Keep shared code in crates/core, CLI code in apps/cli, desktop code in
   apps/ui, web code in apps/web, and browser adapters in extensions/browser.
 - Keep all test source files and fixtures under repository-root tests/, grouped
   by component. Wire unit suites through test-only module paths and integration

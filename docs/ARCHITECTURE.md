@@ -11,16 +11,16 @@ executable and depends on that library. The root manifest owns dependency
 versions, package metadata, lints, and release settings. Cargo.lock and target
 are shared across packages.
 
-`apps/ui`, `apps/web`, and `extensions/browser` currently contain design notes,
-not workspace packages or runnable interfaces. They will be added to the workspace
-when their milestones begin.
+`apps/ui` builds the `rustdm-ui` native egui/eframe application. It composes
+`DownloadQueue` and `QueueRunner` from the same core. `apps/web` and
+`extensions/browser` remain design notes for later milestones.
 
 ```mermaid
 flowchart TD
     CLI[CLI adapter] --> Manager[DownloadManager]
     CLI --> Queue[DownloadQueue / QueueRunner]
     Queue --> Manager
-    GUI[Future desktop adapter] -.-> Manager
+    GUI[Desktop adapter] --> Queue
     Browser[Future browser adapter] -.-> Manager
     Manager --> Options[DownloadOptions]
     Manager --> HTTP[HttpSource]
@@ -49,12 +49,27 @@ flowchart TD
 | `apps/cli/src/progress.rs` | Terminal rendering and update throttling |
 | `crates/core/src/lib.rs` | Small public API and convenience entry point |
 
+## Desktop adapter
+
+`apps/ui/src/app.rs` renders the dashboard, filter/search views, history, and
+add-download dialog. `model.rs` validates form values without owning transfers;
+`theme.rs` contains the native dark theme. `backend.rs` owns a two-worker Tokio
+runtime, a persistent queue, and a single cancellation session. Queue/storage
+operations and native file dialogs execute on background blocking workers.
+
+Progress is coalesced through a watch channel. Durable lifecycle messages use a
+separate channel; snapshots refresh at transitions and periodically to pick up
+changes made by another interface. The core runner lock serializes CLI/desktop
+executors. Closing the window requests cancellation and defers closure until the
+runner has stopped, preserving the existing recovery behavior. The desktop
+shares the core's single active queue job and does not introduce a new engine.
+
 ## Test organization
 
 All test source files live under repository-root [`tests/`](../tests/README.md).
 Core suites are grouped under `tests/core` (including `queue/`); CLI parsing and
-HTTP/process suites live under `tests/cli`. The `ui`, `web`, and `browser` test
-folders are reserved for later milestones. Test-only module paths preserve unit
+HTTP/process suites live under `tests/cli`. Desktop form/backend suites live
+under `tests/ui`; `web` and `browser` test folders are reserved for later milestones. Test-only module paths preserve unit
 test access to private implementation details. An explicit CLI Cargo test target
 registers the HTTP/process suite. Workspace test, format, and lint commands cover
 these files without making internal methods public.

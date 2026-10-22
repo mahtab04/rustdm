@@ -1,0 +1,21 @@
+[package]
+name = "rustdm-ui"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+readme = "README.md"
+description = "RustDM native desktop download manager"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+eframe.workspace = true
+rfd.workspace = true
+rustdm-core = { path = "../../crates/core" }
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

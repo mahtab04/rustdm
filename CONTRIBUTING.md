@@ -18,8 +18,8 @@ On Windows, run these from a Visual Studio Developer Command Prompt, or use
 discovers installed C++ tools with vswhere; Rust/Cargo must be on PATH.
 
 The repository is a Cargo workspace. Shared behavior belongs in `crates/core`;
-terminal behavior belongs in `apps/cli`. `apps/ui`, `apps/web`, and
-`extensions/browser` are reserved for later milestones. Use `cargo run -p rustdm`
+terminal behavior belongs in `apps/cli`, and native desktop views belong in
+`apps/ui`. `apps/web` and `extensions/browser` are reserved for later milestones. Use `cargo run -p rustdm`
 to select the current CLI application.
 
 Keep test source files and fixtures under repository-root `tests/`, grouped by

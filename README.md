@@ -6,9 +6,9 @@ An incremental Rust download manager: CLI first, followed by desktop UI, browser
 integration, and a web interface. The shared download engine is available as a
 library so each interface uses the same behavior.
 
-**Current milestone:** CLI. Parallel downloads, validated resume, live progress,
-a persistent queue, attempt history, bandwidth limits, and optional SHA-256
-verification are implemented.
+**Current milestone:** desktop UI. The v0.1.0 CLI is released. A native desktop
+preview now provides a modern dashboard, download dialog, live progress,
+queue controls, and history using the same Rust engine.
 
 ## Features
 
@@ -32,13 +32,13 @@ verification are implemented.
 |---|---|---|
 | [`crates/core`](crates/core/README.md) | Shared Rust download engine and transfer metrics | Implemented |
 | [`apps/cli`](apps/cli/README.md) | `rustdm` command-line interface | Implemented |
-| [`apps/ui`](apps/ui/README.md) | Future desktop UI | Planned |
+| [`apps/ui`](apps/ui/README.md) | Native desktop dashboard and download dialog | Preview |
 | [`apps/web`](apps/web/README.md) | Future web dashboard/API | Planned |
 | [`extensions/browser`](extensions/browser/README.md) | Future Chrome/Firefox integration | Planned |
 | [`tests`](tests/README.md) | Centralized core, CLI, and future interface tests | Maintained |
 | [`docs`](docs/ARCHITECTURE.md) | Architecture and project documentation | Maintained |
 
-This is a Cargo workspace with two current packages: `rustdm-core` and `rustdm`.
+This is a Cargo workspace with three packages: `rustdm-core`, `rustdm`, and `rustdm-ui`.
 All packages share the root Cargo.lock, dependency versions, and target directory.
 
 ## Build
@@ -68,6 +68,19 @@ See [release packaging and checklist](docs/RELEASE.md) for artifact verification
 and the draft-release workflow. Download the published
 [v0.1.0 CLI release](https://github.com/mahtab04/rustdm/releases/tag/v0.1.0)
 for Windows x86-64 or Linux x86-64.
+
+## Desktop preview
+
+```powershell
+.\build.cmd build -p rustdm-ui --release --locked
+.\target\release\rustdm-ui.exe
+```
+
+Click **New download**, paste a URL, choose a destination filename, and select
+**Download now**. Pause/resume the queue, retry failed jobs, and inspect history
+from the dashboard. Transfer options include connection count, speed limit, and
+SHA-256 verification. See [desktop usage and storage](apps/ui/README.md).
+The published v0.1.0 downloads contain the CLI; desktop packaging comes later.
 
 ## Download and resume
 

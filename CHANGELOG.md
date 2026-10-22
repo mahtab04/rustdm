@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Desktop preview
+
+- Added the native `rustdm-ui` workspace application with a modern dark dashboard,
+  download cards, filters, search, and attempt history.
+- Added a URL/destination dialog and native file picker, plus connection, KiB/s
+  bandwidth, SHA-256, and existing-part resume options.
+- Connected start/pause/resume/retry to the persistent core queue on a background
+  Tokio runtime, coalesced progress, and graceful pause before window closure.
+- Added a persistent per-user queue directory and `--state-dir` for sharing a
+  queue with the CLI. Published v0.1.0 CLI assets remain unchanged.
+- Added desktop form/backend tests under repository-root `tests/ui` and Linux
+  desktop build dependencies in CI. Desktop release packaging is future work.
+
 ## [0.1.0](https://github.com/mahtab04/rustdm/releases/tag/v0.1.0) - 2026-10-22
 
 - Published the first CLI release with verified Windows x86-64 ZIP and Linux

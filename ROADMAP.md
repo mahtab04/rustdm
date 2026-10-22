@@ -3,7 +3,7 @@
 Development proceeds in milestones. Each milestone must have working behavior,
 tests, documentation, and reviewable Git commits before moving on.
 
-## 1. CLI — current milestone
+## 1. CLI - v0.1.0 released
 
 - [x] HTTP/HTTPS downloading and range-capability probing.
 - [x] Parallel ranges, retries, and progress reporting.
@@ -26,12 +26,13 @@ tests, documentation, and reviewable Git commits before moving on.
 Exit criteria: reliable download/resume workflow, queue/history, documented
 limitations, and passing supported-platform checks.
 
-## 2. Desktop UI
+## 2. Desktop UI - current milestone
 
-- [ ] Choose a desktop framework after the CLI API stabilizes.
-- [ ] Add URL dialog and download list with progress, speed, and errors.
-- [ ] Pause/resume/cancel and queue management through the existing manager.
-- [ ] Settings, destination selection, tray behavior, and packaging.
+- [x] Native Rust desktop framework: egui/eframe with the shared core.
+- [x] Modern dashboard, URL/destination dialog, live progress/speed/ETA, search, and history.
+- [x] Persistent queue start/pause/resume/retry through the existing queue runner.
+- [x] Destination picker, bandwidth cap, and optional SHA-256 verification.
+- [ ] Remembered preferences, tray behavior, and desktop packaging.
 
 ## 3. Browser integration
 
