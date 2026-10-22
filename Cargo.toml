@@ -1,0 +1,20 @@
+[package]
+name = "rustdm"
+version = "0.1.0"
+edition = "2024"
+description = "A resumable HTTP download manager with parallel byte ranges"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+fs2 = "0.4"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+
+[profile.release]
+lto = "thin"
+strip = true
