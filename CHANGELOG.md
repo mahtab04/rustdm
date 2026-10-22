@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Dynamic range scheduling
+
+- Large downloads now plan multiple saved ranges per connection and dispatch
+  pending work to free workers, while respecting `--connections` on resume too.
+- Kept stable part indices, retries, shared bandwidth limits, and final checksum
+  verification. Planning is bounded at 128 parts with a 256 KiB size threshold.
+- Retained support for older manifests; older builds reject new manifests with
+  more than 16 parts. Active range boundaries are not split during transfer.
+- Added blocked-range scheduling, large-file resume, byte-coverage planning, and
+  weak-ETag/Last-Modified interoperability tests.
+- Fixed the threaded HTTP fixture to use blocking accepted sockets on Windows,
+  preventing inherited nonblocking mode from interrupting larger test responses.
+
 ### Checksum verification
 
 - Added optional `--sha256 HEX` verification for direct and queued downloads,

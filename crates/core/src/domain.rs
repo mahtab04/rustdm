@@ -119,12 +119,22 @@ impl<F: Fn(Progress) + Send + Sync> ProgressObserver for F {
     }
 }
 
+// Up to eight rounds of work per connection, bounded for saved-state validation.
+pub(crate) const MAX_SEGMENTS: usize = 128;
+const MIN_SEGMENT_BYTES: u64 = 256 * 1024;
+
 impl Segment {
     pub(crate) fn plan(size: u64, connections: usize) -> Vec<Segment> {
         if size == 0 {
             return Vec::new();
         }
-        let count = u64::try_from(connections).unwrap_or(16).min(size);
+        let connections = connections.clamp(1, 16) as u64;
+        let count = size
+            .div_ceil(MIN_SEGMENT_BYTES)
+            .min(connections * 8)
+            .max(connections)
+            .min(MAX_SEGMENTS as u64)
+            .min(size);
         let base = size / count;
         let extra = size % count;
         let mut start = 0;
@@ -138,3 +148,7 @@ impl Segment {
             .collect()
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/core/segments.rs"]
+mod tests;

@@ -92,7 +92,8 @@ the current concrete components are exercised through real HTTP behavior tests.
 2. Probe a one-byte range with identity encoding; inspect size and validator.
 3. Create or validate the saved manifest. Parallel/resumed transfers require
    ranges and a strong ETag or Last-Modified validator.
-4. Transfer non-overlapping segments into separate files, retrying missing bytes.
+4. Dispatch non-overlapping saved segments to a bounded pool of workers,
+   transferring into separate files and retrying missing bytes.
    Otherwise download a single stream, restarting that stream on retry.
 5. Verify sizes, assemble into a temporary file, verify any expected SHA-256,
    sync it, and publish without
@@ -113,8 +114,32 @@ bounded frequency. Other interfaces can use the same meter with their own view.
 
 The manifest stores URLs, size, validators, and segment layout. Request headers
 are supplied in memory and must be supplied again for authenticated resume.
-Static segments and some blocking local file I/O remain deliberate initial
-constraints; further performance work belongs to the CLI milestone.
+Range boundaries remain fixed during an execution; some local file I/O is still
+blocking. Further performance work belongs to the CLI milestone.
+
+## Dynamic range scheduling
+
+For large files, `Segment::plan` creates up to eight ranges per configured
+connection, bounded by 128 total saved parts. A 256 KiB planning threshold avoids
+making extra tiny ranges; small files retain approximately one range per
+connection. The parts partition the full byte interval without gaps or overlaps,
+including at the largest representable file size.
+
+The manager starts at most `--connections` tasks. Each claims a unique index
+from an atomic counter, runs the existing `SegmentWorker` with its per-part retry
+budget, and then claims the next index. A slow request therefore does not prevent
+other workers from processing pending parts. Every worker shares cancellation,
+progress counters, and the bandwidth limiter. The manager joins the whole pool
+before assembly or error return, retaining the output lock during worker cleanup.
+
+Part paths, boundaries, and assembly order remain stable. Completed parts are
+skipped on resume; pending parts use the new execution's connection limit even
+when the saved plan was created with a larger limit. `DownloadSummary.connections`
+reports the worker limit for that execution, rather than the number of saved
+parts. Older manifests with up to 16 parts remain valid. New manifests keep the
+same format but may contain up to 128 parts; old builds reject larger plans.
+Splitting an already active slow range remains future work, so the last remaining
+range can still be a bottleneck.
 
 ## Bandwidth pacing
 

@@ -14,6 +14,7 @@ verification are implemented.
 
 - HTTP/HTTPS, certificate verification, redirects, and connection reuse.
 - Up to 16 parallel byte-range connections with retries for missing bytes.
+- Dynamic dispatch of saved ranges, so free connections pick up pending work.
 - Ctrl+C cancellation and persistent partial files for resumable downloads.
 - Live transfer speed and ETA; resumed bytes are excluded from speed calculations.
 - Content-Range, length, and validator checks before accepting range data.
@@ -100,10 +101,19 @@ although URL query parameters remain part of the saved source URL.
 
 Servers without usable ranges/validators use one stream. Retries restart that
 stream from zero; an interrupted non-resumable download currently requires a new
-output path. Segments are fixed at startup. Dynamic segment
-rebalancing, desktop UI, browser capture, FTP, and media assembly are
-future milestones. Existing `.rustidm` partial directories are detected and
+output path. Large files use multiple saved ranges per connection; free
+connections claim pending ranges as they finish. Range boundaries stay fixed for
+safe resume. Splitting an already active slow range, desktop UI, browser capture,
+FTP, and media assembly remain future work. Existing `.rustidm` partial directories are detected and
 resumed in place when there is no `.rustdm` directory for the same output.
+
+`--connections` bounds active transfer workers, including when resuming a download
+created with a different connection count. Large downloads plan up to eight
+ranges per connection (at most 128 saved parts), with a 256 KiB planning threshold
+to avoid excessive small requests. Each connection processes pending ranges in
+order as it becomes free. Saved range indices remain stable across retries and
+resumes. Older partial downloads with up to 16 parts remain supported; older
+RustDM builds cannot resume new manifests containing more than 16 parts.
 
 Speed is measured over recent progress samples. ETA is an estimate and remains
 unknown until a nonzero speed and total file size are available. A stream retry

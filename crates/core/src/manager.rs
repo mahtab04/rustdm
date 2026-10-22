@@ -9,7 +9,10 @@ use crate::{
 use anyhow::{Context, Result, bail, ensure};
 use reqwest::Url;
 use std::{
-    sync::{Arc, atomic::AtomicU64},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, AtomicUsize, Ordering},
+    },
     time::Duration,
 };
 use tokio::task::JoinSet;
@@ -73,21 +76,50 @@ impl DownloadManager {
             let downloaded = Arc::new(AtomicU64::new(resumed_bytes));
             let group_cancel = cancel.child_token();
             let mut tasks = JoinSet::new();
-            for (index, segment) in manifest.segments.iter().enumerate() {
-                let worker = SegmentWorker {
-                    client: source.client().clone(),
-                    url: remote.final_url.clone(),
-                    validator: remote.validator.clone().unwrap(),
-                    total: size,
-                    path: state.part_path(index),
-                    segment: segment.clone(),
-                    retries: options.retries,
-                    downloaded: downloaded.clone(),
-                    cancel: group_cancel.clone(),
-                    limiter: limiter.clone(),
-                };
+            // Parts retain stable indices for assembly/resume; connections claim
+            // the next part as soon as their current one completes.
+            let parts = Arc::new(
+                manifest
+                    .segments
+                    .iter()
+                    .enumerate()
+                    .map(|(index, segment)| (state.part_path(index), segment.clone()))
+                    .collect::<Vec<_>>(),
+            );
+            let next = Arc::new(AtomicUsize::new(0));
+            for _ in 0..options.connections.min(parts.len()) {
+                let parts = parts.clone();
+                let next = next.clone();
+                let client = source.client().clone();
+                let url = remote.final_url.clone();
+                let validator = remote.validator.clone().unwrap();
+                let retries = options.retries;
+                let downloaded = downloaded.clone();
+                let cancel = group_cancel.clone();
+                let limiter = limiter.clone();
                 let progress = progress.clone();
-                tasks.spawn(async move { worker.run(progress.as_ref()).await });
+                tasks.spawn(async move {
+                    loop {
+                        ensure!(!cancel.is_cancelled(), "Download paused");
+                        let index = next.fetch_add(1, Ordering::Relaxed);
+                        let Some((path, segment)) = parts.get(index) else {
+                            return Ok(());
+                        };
+                        let worker = SegmentWorker {
+                            client: client.clone(),
+                            url: url.clone(),
+                            validator: validator.clone(),
+                            total: size,
+                            path: path.clone(),
+                            segment: segment.clone(),
+                            retries,
+                            downloaded: downloaded.clone(),
+                            cancel: cancel.clone(),
+                            limiter: limiter.clone(),
+                        };
+                        worker.run(progress.as_ref()).await?;
+                    }
+                });
             }
             let mut error = None;
             while let Some(result) = tasks.join_next().await {
@@ -148,7 +180,7 @@ impl DownloadManager {
         state.cleanup(part_count);
         Ok(DownloadSummary {
             bytes,
-            connections: part_count,
+            connections: options.connections.min(part_count),
             resumed_bytes,
             resumable: manifest.segmented,
         })

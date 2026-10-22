@@ -1,7 +1,7 @@
 use crate::{
     CancellationToken, Sha256Checksum,
     checksum::ChecksumVerifier,
-    domain::{DownloadOptions, Remote, Segment, Validator},
+    domain::{DownloadOptions, MAX_SEGMENTS, Remote, Segment, Validator},
 };
 use anyhow::{Context, Result, ensure};
 use fs2::FileExt;
@@ -40,7 +40,7 @@ impl Manifest {
         );
         let size = self.size.context("Missing saved total")?;
         ensure!(
-            !self.segments.is_empty() && self.segments.len() <= 16,
+            !self.segments.is_empty() && self.segments.len() <= MAX_SEGMENTS,
             "Invalid saved segment count"
         );
         let mut next = 0;

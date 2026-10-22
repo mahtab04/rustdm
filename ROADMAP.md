@@ -17,7 +17,9 @@ tests, documentation, and reviewable Git commits before moving on.
 - [x] Download queue and persistent job history.
 - [x] Per-download bandwidth limits shared across connections and retries.
 - [x] Optional publisher-provided SHA-256 checksum verification before publication.
-- [ ] Dynamic segment rebalancing and broader interoperability coverage.
+- [x] Dynamic dispatch of saved ranges across a bounded connection pool.
+- [x] Large-file resume with changed connection limits and weak-ETag/Last-Modified coverage.
+- [ ] Split already active slow ranges and expand server interoperability coverage.
 - [ ] Versioned CLI release and documented release checklist.
 
 Exit criteria: reliable download/resume workflow, queue/history, documented

@@ -35,13 +35,17 @@ struct Server {
 
 impl Server {
     fn new(mode_value: u8) -> Self {
+        Self::with_size(mode_value, 131_071)
+    }
+
+    fn with_size(mode_value: u8, size: usize) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}/download", listener.local_addr().unwrap());
         listener.set_nonblocking(true).unwrap();
         let data = Arc::new(if mode_value == 7 {
             Vec::new()
         } else {
-            (0..131_071)
+            (0..size)
                 .map(|i| ((i * 31) % 251) as u8)
                 .collect::<Vec<_>>()
         });
@@ -118,6 +122,9 @@ fn respond(
     requests: &Mutex<Vec<Request>>,
     truncated: &AtomicBool,
 ) -> std::io::Result<()> {
+    // Accepted sockets can inherit the listener's nonblocking mode on Windows.
+    // Each responder has its own thread and uses blocking I/O with timeouts.
+    stream.set_nonblocking(false)?;
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
     let mut buffer = Vec::new();
@@ -173,7 +180,12 @@ fn respond(
         "200 OK"
     };
     let mut headers = format!("HTTP/1.1 {status}\r\nConnection: close\r\n");
-    if mode != 6 {
+    if mode == 9 || mode == 10 {
+        headers.push_str("ETag: W/\"weak-fixture\"\r\n");
+        if mode == 9 {
+            headers.push_str("Last-Modified: Wed, 21 Oct 2015 07:28:00 GMT\r\n");
+        }
+    } else if mode != 6 {
         headers.push_str(&format!("ETag: {}\r\n", etag.lock().unwrap()));
     }
     if mode != 5 {
@@ -191,6 +203,26 @@ fn respond(
         ));
     }
     headers.push_str("\r\n");
+    // Hold the first range until another connection has requested all seven
+    // remaining parts. A connection tied to one fixed range cannot pass this.
+    if mode == 8 && !probe && start == 0 {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|request| request.if_range.is_some())
+            .count()
+            < 8
+        {
+            if std::time::Instant::now() >= deadline {
+                return Err(std::io::Error::other(
+                    "Idle connection did not claim remaining parts",
+                ));
+            }
+            thread::sleep(Duration::from_millis(2));
+        }
+    }
     stream.write_all(headers.as_bytes())?;
     let body = if mode == 4 && !probe && !truncated.swap(true, Ordering::SeqCst) {
         &body[..body.len() / 2]
@@ -922,4 +954,104 @@ fn cli_direct_checksum_mismatch_exits_nonzero_and_accepts_a_corrected_digest_on_
         String::from_utf8_lossy(&good.stderr)
     );
     assert_eq!(fs::read(output).unwrap(), *server.data);
+}
+
+#[tokio::test]
+async fn free_connections_claim_more_ranges_while_the_first_range_is_blocked() {
+    let server = Server::with_size(8, 2 * 1024 * 1024);
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("scheduled.bin");
+    let summary = tokio::time::timeout(
+        Duration::from_secs(10),
+        download(
+            &server
+                .options(&output)
+                .with_connections(2)
+                .with_retries(0)
+                .with_sha256(
+                    "44edc80377f7d227f3e05a12c7a6458262ffa104db638068e7f48cae2917a26e"
+                        .parse()
+                        .unwrap(),
+                ),
+            CancellationToken::new(),
+            |_| {},
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(summary.connections, 2);
+    assert_eq!(fs::read(output).unwrap(), *server.data);
+    let requests = server.requests.lock().unwrap();
+    let mut ranges: Vec<_> = requests
+        .iter()
+        .filter(|r| r.if_range.is_some())
+        .map(|r| r.range.unwrap())
+        .collect();
+    ranges.sort_unstable();
+    assert_eq!(ranges.len(), 8);
+    let mut next = 0;
+    for (start, end) in ranges {
+        assert_eq!(start, next);
+        next = end + 1;
+    }
+    assert_eq!(next, server.data.len() as u64);
+}
+
+#[tokio::test]
+async fn dynamically_scheduled_parts_resume_with_a_lower_connection_limit() {
+    let server = Server::with_size(0, 8 * 1024 * 1024);
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("scheduled-resume.bin");
+    pause(&server, &server.options(&output).with_connections(4)).await;
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(state_directory(&output).join("manifest.json")).unwrap())
+            .unwrap();
+    assert_eq!(manifest["segments"].as_array().unwrap().len(), 32);
+    let summary = download(
+        &server
+            .options(&output)
+            .with_connections(1)
+            .with_resume(true)
+            .with_sha256(
+                "a6a7387ed918a4fe3e11b7ffa8055ba6a1dfccb86e4f64df283ed832b9fe0ad2"
+                    .parse()
+                    .unwrap(),
+            ),
+        CancellationToken::new(),
+        |_| {},
+    )
+    .await
+    .unwrap();
+    assert_eq!(summary.connections, 1);
+    assert!(summary.resumed_bytes > 0);
+    assert_eq!(fs::read(output).unwrap(), *server.data);
+}
+
+#[tokio::test]
+async fn weak_etags_use_last_modified_for_ranges_or_fall_back_without_it() {
+    for mode in [9, 10] {
+        let server = Server::new(mode);
+        let temp = tempfile::tempdir().unwrap();
+        let output = temp.path().join("weak-etag.bin");
+        let summary = download(
+            &server
+                .options(&output)
+                .with_sha256(FIXTURE_SHA256.parse().unwrap()),
+            CancellationToken::new(),
+            |_| {},
+        )
+        .await
+        .unwrap();
+        assert_eq!(summary.connections, if mode == 9 { 4 } else { 1 });
+        assert_eq!(summary.resumable, mode == 9);
+        assert_eq!(fs::read(output).unwrap(), *server.data);
+        let requests = server.requests.lock().unwrap();
+        for request in requests.iter().filter(|request| request.if_range.is_some()) {
+            assert_eq!(
+                request.if_range.as_deref(),
+                Some("Wed, 21 Oct 2015 07:28:00 GMT")
+            );
+        }
+    }
 }
