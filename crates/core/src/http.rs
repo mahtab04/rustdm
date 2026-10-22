@@ -31,7 +31,7 @@ impl HttpSource {
         if !headers.contains_key(USER_AGENT) {
             headers.insert(
                 USER_AGENT,
-                HeaderValue::from_static(concat!("rustidm/", env!("CARGO_PKG_VERSION"))),
+                HeaderValue::from_static(concat!("rustdm/", env!("CARGO_PKG_VERSION"))),
             );
         }
         let client = Client::builder()

@@ -57,8 +57,15 @@ impl Manifest {
 /// Location of the recoverable partial files. No authentication headers are stored.
 pub fn state_directory(output: &Path) -> PathBuf {
     let mut name = output.as_os_str().to_os_string();
-    name.push(".rustidm");
-    PathBuf::from(name)
+    name.push(".rustdm");
+    let current = PathBuf::from(name);
+    if current.exists() {
+        return current;
+    }
+    let mut legacy = output.as_os_str().to_os_string();
+    legacy.push(".rustidm");
+    let legacy = PathBuf::from(legacy);
+    if legacy.exists() { legacy } else { current }
 }
 
 pub(crate) fn part_size(path: &Path) -> Result<u64> {

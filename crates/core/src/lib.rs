@@ -1,15 +1,17 @@
-//! RustIDM's UI-independent download engine.
+//! RustDM's UI-independent download engine.
 //! Compose a [`DownloadManager`] with [`DownloadOptions`], an observer, and a
 //! cancellation token. HTTP details and persistent state stay encapsulated.
 
 mod domain;
 mod http;
 mod manager;
+mod metrics;
 mod state;
 mod transfer;
 
 pub use domain::{DownloadOptions, DownloadSummary, Progress, ProgressObserver};
 pub use manager::DownloadManager;
+pub use metrics::{ProgressMeter, TransferMetrics};
 pub use state::state_directory;
 pub use tokio_util::sync::CancellationToken;
 

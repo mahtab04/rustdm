@@ -1,4 +1,4 @@
-use rustidm::{
+use rustdm_core::{
     CancellationToken, DownloadManager, DownloadOptions, Progress, ProgressObserver, download,
     state_directory,
 };
@@ -399,7 +399,7 @@ fn cli_downloads_a_file_with_the_real_executable() {
     let server = Server::new(0);
     let temp = tempfile::tempdir().unwrap();
     let output = temp.path().join("cli.bin");
-    let result = std::process::Command::new(env!("CARGO_BIN_EXE_rustidm"))
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_rustdm"))
         .arg(&server.url)
         .args(["--connections", "3", "--output"])
         .arg(&output)
@@ -412,6 +412,7 @@ fn cli_downloads_a_file_with_the_real_executable() {
     );
     assert_eq!(fs::read(output).unwrap(), *server.data);
     assert!(String::from_utf8_lossy(&result.stdout).contains("3 connections"));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("ETA"));
 }
 
 #[tokio::test]
@@ -460,4 +461,26 @@ async fn manager_accepts_a_custom_progress_observer() {
         .unwrap();
     assert_eq!(observed.load(Ordering::SeqCst), summary.bytes);
     assert_eq!(fs::read(output).unwrap(), *server.data);
+}
+
+#[tokio::test]
+async fn renamed_app_resumes_legacy_rustidm_partial_files() {
+    let server = Server::new(0);
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("legacy.bin");
+    let options = server.options(&output);
+    pause(&server, &options).await;
+    let current = state_directory(&output);
+    let mut legacy = output.as_os_str().to_os_string();
+    legacy.push(".rustidm");
+    let legacy = std::path::PathBuf::from(legacy);
+    assert!(current.starts_with(temp.path()) && legacy.starts_with(temp.path()));
+    fs::rename(&current, &legacy).unwrap();
+    assert_eq!(state_directory(&output), legacy);
+    let result = download(&options.with_resume(true), CancellationToken::new(), |_| {})
+        .await
+        .unwrap();
+    assert!(result.resumed_bytes > 0);
+    assert_eq!(fs::read(output).unwrap(), *server.data);
+    assert!(!legacy.exists());
 }

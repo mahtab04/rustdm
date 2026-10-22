@@ -1,16 +1,15 @@
+mod progress;
+
 use anyhow::{Context, Result};
 use clap::Parser;
-use rustidm::{CancellationToken, DownloadOptions, Progress, download};
-use std::{
-    io::{self, Write},
-    path::PathBuf,
-    time::{Duration, Instant},
-};
+use progress::ProgressRenderer;
+use rustdm_core::{CancellationToken, DownloadOptions, Progress, download};
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
     version,
-    about = "Download files using parallel HTTP ranges with recoverable partial files"
+    about = "Rust Download Manager: parallel HTTP downloads with validated resume"
 )]
 struct Args {
     /// HTTP or HTTPS download URL
@@ -32,21 +31,13 @@ struct Args {
     headers: Vec<String>,
 }
 
-fn format_size(bytes: u64) -> String {
-    if bytes >= 1024 * 1024 {
-        format!("{:.2} MiB", bytes as f64 / (1024.0 * 1024.0))
-    } else {
-        format!("{:.1} KiB", bytes as f64 / 1024.0)
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    let mut options = DownloadOptions::new(args.url, args.output);
-    options = options.with_connections(args.connections.into());
-    options = options.with_retries(args.retries.into());
-    options = options.with_resume(args.resume);
+    let mut options = DownloadOptions::new(args.url, args.output)
+        .with_connections(args.connections.into())
+        .with_retries(args.retries.into())
+        .with_resume(args.resume);
     for header in args.headers {
         let (name, value) = header.split_once(':').context("Use -H \"Name: Value\"")?;
         options = options.with_header(name.trim(), value.trim());
@@ -58,30 +49,16 @@ async fn main() -> Result<()> {
             signal.cancel();
         }
     });
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<Progress>(64);
+    // A watch channel coalesces rapid worker events and retains the latest update,
+    // including completion, without allowing terminal output to block transfers.
+    let (tx, mut rx) = tokio::sync::watch::channel::<Option<Progress>>(None);
     let reporter = tokio::spawn(async move {
-        let mut previous = Instant::now();
-        while let Some(progress) = rx.recv().await {
-            if previous.elapsed() < Duration::from_millis(200)
-                && progress.total != Some(progress.downloaded)
-            {
-                continue;
+        let mut renderer = ProgressRenderer::new();
+        while rx.changed().await.is_ok() {
+            let current = *rx.borrow_and_update();
+            if let Some(progress) = current {
+                renderer.render(progress);
             }
-            previous = Instant::now();
-            match progress.total {
-                Some(total) => eprint!(
-                    "\r{} / {} ({:.1}%)     ",
-                    format_size(progress.downloaded),
-                    format_size(total),
-                    if total == 0 {
-                        100.0
-                    } else {
-                        progress.downloaded as f64 * 100.0 / total as f64
-                    }
-                ),
-                None => eprint!("\r{} downloaded     ", format_size(progress.downloaded)),
-            }
-            let _ = io::stderr().flush();
         }
     });
     eprintln!(
@@ -89,7 +66,7 @@ async fn main() -> Result<()> {
         options.output().display()
     );
     let result = download(&options, cancel, move |progress| {
-        let _ = tx.try_send(progress);
+        tx.send_replace(Some(progress));
     })
     .await;
     let _ = reporter.await;
