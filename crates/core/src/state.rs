@@ -174,7 +174,9 @@ impl DownloadState {
         );
         let mut assembled = tempfile::NamedTempFile::new_in(&self.directory)?;
         let mut copied = 0;
-        let mut buffer = [0u8; 64 * 1024];
+        // This buffer lives across an await. Keep it on the heap so composed
+        // queue/CLI futures do not multiply its stack footprint on Windows.
+        let mut buffer = vec![0u8; 64 * 1024];
         for index in 0..part_count {
             let path = self.part_path(index);
             let mut part = File::open(&path)?;
