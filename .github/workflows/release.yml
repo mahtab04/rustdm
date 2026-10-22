@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-and-package:
+    uses: ./.github/workflows/ci.yml
+
+  draft:
+    if: github.ref_type == 'tag'
+    needs: validate-and-package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: rustdm-*
+          merge-multiple: true
+          path: dist
+      - name: Create draft release with checked packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: >-
+          gh release create "$RELEASE_TAG" dist/*
+          --repo "$GITHUB_REPOSITORY" --verify-tag --draft
+          --title "RustDM $RELEASE_TAG"
+          --notes-file "docs/releases/$RELEASE_TAG.md"

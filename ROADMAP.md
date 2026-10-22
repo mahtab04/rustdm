@@ -20,7 +20,8 @@ tests, documentation, and reviewable Git commits before moving on.
 - [x] Dynamic dispatch of saved ranges across a bounded connection pool.
 - [x] Large-file resume with changed connection limits and weak-ETag/Last-Modified coverage.
 - [ ] Split already active slow ranges and expand server interoperability coverage.
-- [ ] Versioned CLI release and documented release checklist.
+- [x] Windows/Linux package automation, archive checksums, and release checklist.
+- [ ] Review and publish the first versioned CLI release.
 
 Exit criteria: reliable download/resume workflow, queue/history, documented
 limitations, and passing supported-platform checks.

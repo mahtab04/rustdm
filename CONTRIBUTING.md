@@ -31,6 +31,14 @@ Tests use an actual local HTTP server with known binary data. Add behavioral
 coverage for response validation, resumed state, cancellation, and output safety
 when changing those paths. Do not depend on public download servers in tests.
 
+## Release packages
+
+CI packages and smoke-tests the native executable after workspace validation.
+Packaging uses Python 3.12+ and the standard library, without Python dependencies.
+See [the release checklist](docs/RELEASE.md) for local commands, versioned notes,
+archive checksums, and the tag-triggered draft-release workflow. `dist/` and Python
+bytecode caches are ignored. Publishing a draft is a separate release step.
+
 ## Git workflow
 
 Use a feature branch for contributions and a focused pull request. Keep changes

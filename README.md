@@ -63,6 +63,10 @@ The helper discovers installed Visual Studio tools; Cargo must be on PATH.
 On Linux, the executable is `./target/release/rustdm`.
 To run from source, use `cargo run -p rustdm -- --help`.
 
+CI also packages portable Windows/Linux builds with SHA-256 checksum files.
+See [release packaging and checklist](docs/RELEASE.md) for artifact verification
+and the draft-release workflow. A public CLI release has not been published yet.
+
 ## Download and resume
 
 Replace the example URL with a real direct-download URL:
@@ -222,6 +226,7 @@ results show the status of the configured platforms.
 - [Roadmap](ROADMAP.md): CLI -> desktop -> browser -> web.
 - [Contributing](CONTRIBUTING.md): checks and Conventional Commit workflow.
 - [Changelog](CHANGELOG.md): implemented changes and compatibility notes.
+- [Releases](docs/RELEASE.md): portable packages, checksums, and publishing checklist.
 
 This repository contains the new Rust implementation. Build caches, downloaded
 files, executable analysis inputs, and extracted vendor code stay outside Git.

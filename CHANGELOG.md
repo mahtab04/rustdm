@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### CLI release preparation
+
+- Added native Windows ZIP and Linux tar.gz packages with archive SHA-256 files
+  and build metadata identifying the source, target, compiler, and binary hash.
+- CI now verifies and smoke-tests extracted packages and retains branch artifacts.
+- Added reusable CI and a version-tag workflow that creates a draft release only
+  after both platforms pass. Tags must match the workspace/executable version.
+- Added v0.1.0 candidate notes and a release checklist; no release is published
+  by this preparation step.
+
 ### Dynamic range scheduling
 
 - Large downloads now plan multiple saved ranges per connection and dispatch

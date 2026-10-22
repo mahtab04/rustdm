@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -15,7 +16,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary: rustdm
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary: rustdm.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -30,3 +37,23 @@ jobs:
         run: cargo test --workspace --locked
       - name: Release build
         run: cargo build --workspace --release --locked
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Package and check executable version
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: >-
+          python .github/scripts/package_release.py
+          --target ${{ matrix.target }}
+          --binary target/release/${{ matrix.binary }}
+      - name: Check packaged executable
+        shell: bash
+        run: python .github/scripts/check_package.py dist
+      - uses: actions/upload-artifact@v7
+        if: github.event_name != 'pull_request'
+        with:
+          name: rustdm-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
