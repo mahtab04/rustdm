@@ -6,6 +6,9 @@
   points, composition, and ownership. Keep user interfaces out of the core engine.
 - Keep shared code in crates/core, CLI code in apps/cli, future desktop code in
   apps/ui, web code in apps/web, and browser adapters in extensions/browser.
+- Keep all test source files and fixtures under repository-root tests/, grouped
+  by component. Wire unit suites through test-only module paths and integration
+  suites through explicit Cargo test targets; preserve private API boundaries.
 - Keep modules focused; avoid inheritance emulation, speculative abstractions,
   and duplicate download implementations for different interfaces.
 - Run workspace-wide formatting, Clippy with warnings denied, and relevant tests

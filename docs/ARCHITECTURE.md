@@ -47,6 +47,16 @@ flowchart TD
 | `apps/cli/src/progress.rs` | Terminal rendering and update throttling |
 | `crates/core/src/lib.rs` | Small public API and convenience entry point |
 
+## Test organization
+
+All test source files live under repository-root [`tests/`](../tests/README.md).
+Core suites are grouped under `tests/core` (including `queue/`); CLI parsing and
+HTTP/process suites live under `tests/cli`. The `ui`, `web`, and `browser` test
+folders are reserved for later milestones. Test-only module paths preserve unit
+test access to private implementation details. An explicit CLI Cargo test target
+registers the HTTP/process suite. Workspace test, format, and lint commands cover
+these files without making internal methods public.
+
 ## Public API
 
 `DownloadOptions` has private external fields and builder-style methods.

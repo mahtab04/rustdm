@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Test organization
+
+- Centralized all test source files under repository-root `tests/`, grouped by
+  core/queue and CLI, with reserved UI, web, and browser test folders.
+- Preserved private unit-test access and Cargo integration-test discovery, with
+  contributor guidance for adding suites.
+
 ### Queue and history
 
 - Added shared `DownloadQueue` and `QueueRunner` services with versioned,

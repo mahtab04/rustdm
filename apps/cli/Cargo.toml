@@ -8,6 +8,10 @@ description = "Rust Download Manager command-line application"
 keywords = ["download", "http", "resume", "cli"]
 categories = ["command-line-utilities", "network-programming"]
 
+[[test]]
+name = "downloads"
+path = "../../tests/cli/downloads.rs"
+
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true

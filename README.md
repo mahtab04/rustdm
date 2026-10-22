@@ -28,10 +28,11 @@ checksum verification are next.
 | Folder | Purpose | Status |
 |---|---|---|
 | [`crates/core`](crates/core/README.md) | Shared Rust download engine and transfer metrics | Implemented |
-| [`apps/cli`](apps/cli/README.md) | `rustdm` CLI and HTTP integration tests | Implemented |
+| [`apps/cli`](apps/cli/README.md) | `rustdm` command-line interface | Implemented |
 | [`apps/ui`](apps/ui/README.md) | Future desktop UI | Planned |
 | [`apps/web`](apps/web/README.md) | Future web dashboard/API | Planned |
 | [`extensions/browser`](extensions/browser/README.md) | Future Chrome/Firefox integration | Planned |
+| [`tests`](tests/README.md) | Centralized core, CLI, and future interface tests | Maintained |
 | [`docs`](docs/ARCHITECTURE.md) | Architecture and project documentation | Maintained |
 
 This is a Cargo workspace with two current packages: `rustdm-core` and `rustdm`.
@@ -144,6 +145,7 @@ cargo test --workspace --locked
 cargo build --workspace --release --locked
 ```
 
+All test source files live under [`tests/`](tests/README.md), grouped by component.
 Integration tests use a local HTTP server and known binary data, covering
 parallel transfers, pause/resume, truncated responses, changed validators,
 invalid ranges, fallback behavior, and destination preservation. Queue tests cover

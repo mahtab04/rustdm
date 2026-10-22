@@ -22,6 +22,11 @@ terminal behavior belongs in `apps/cli`. `apps/ui`, `apps/web`, and
 `extensions/browser` are reserved for later milestones. Use `cargo run -p rustdm`
 to select the current CLI application.
 
+Keep test source files and fixtures under repository-root `tests/`, grouped by
+component. See [test organization and Cargo wiring](tests/README.md) before adding
+a suite. Unit tests retain private access through test-only module paths;
+integration suites are explicit targets in the owning package manifest.
+
 Tests use an actual local HTTP server with known binary data. Add behavioral
 coverage for response validation, resumed state, cancellation, and output safety
 when changing those paths. Do not depend on public download servers in tests.
