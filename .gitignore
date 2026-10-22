@@ -2,3 +2,12 @@
 /.cargo-cache/
 /.cargo-home/
 *.rustdm/
+*.rustidm/
+*.part
+*.exe
+*.pdb
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
