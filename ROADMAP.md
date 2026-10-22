@@ -15,7 +15,7 @@ tests, documentation, and reviewable Git commits before moving on.
 - [x] Workspace folders for core, CLI, desktop UI, web, and browser adapters.
 - [x] Live speed and ETA reporting with reusable transfer metrics.
 - [x] Download queue and persistent job history.
-- [ ] Bandwidth limits.
+- [x] Per-download bandwidth limits shared across connections and retries.
 - [ ] Optional publisher-provided checksum verification.
 - [ ] Dynamic segment rebalancing and broader interoperability coverage.
 - [ ] Versioned CLI release and documented release checklist.

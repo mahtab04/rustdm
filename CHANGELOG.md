@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Bandwidth limits
+
+- Added `--limit-rate BYTES_PER_SECOND` to direct downloads and `queue add`, with
+  positive-integer validation and unlimited speed when omitted.
+- Added an encapsulated per-download limiter shared by all range connections and
+  retries, also used by fallback and unknown-length streams. Cancellation
+  interrupts limiter waits; resume charges only newly transferred data.
+- Persisted optional queue limits while keeping older queue records readable.
+- Added local HTTP pacing, cancellation/resume, CLI, and persistence coverage.
+
 ### Test organization
 
 - Centralized all test source files under repository-root `tests/`, grouped by

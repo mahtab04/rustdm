@@ -7,8 +7,8 @@ integration, and a web interface. The shared download engine is available as a
 library so each interface uses the same behavior.
 
 **Current milestone:** CLI. Parallel downloads, validated resume, live progress,
-a persistent queue, and attempt history are implemented. Bandwidth limits and
-checksum verification are next.
+a persistent queue, attempt history, and bandwidth limits are implemented.
+Checksum verification is next.
 
 ## Features
 
@@ -22,6 +22,7 @@ checksum verification are next.
 - Exclusive writer locking and completion that preserves existing destinations.
 - Encapsulated DownloadManager, builder-style options, and a progress observer.
 - Persistent queue with sequential execution, retry, and per-attempt history.
+- Per-download bandwidth caps shared across parallel connections and retries.
 
 ## Repository layout
 
@@ -86,6 +87,7 @@ Optional request context can be supplied with repeated headers:
 | `-c, --connections` | Parallel range connections, 1 to 16 | 4 |
 | `--resume` | Reuse validated partial files | Off |
 | `--retries` | Additional attempts, 0 to 10 | 3 |
+| `--limit-rate` | Aggregate body bytes per second, positive integer | Unlimited |
 | `-H, --header` | Request header; repeatable | None |
 
 New partial state is stored in `<output>.rustdm/`. Resume requires matching source
@@ -104,6 +106,28 @@ resumed in place when there is no `.rustdm` directory for the same output.
 Speed is measured over recent progress samples. ETA is an estimate and remains
 unknown until a nonzero speed and total file size are available. A stream retry
 that resets its byte count also resets the speed measurement.
+
+## Bandwidth limits
+
+```sh
+rustdm download "https://example.com/file.zip" -o file.zip -c 8 --limit-rate 1048576
+rustdm queue add "https://example.com/file.zip" -o queued.zip --limit-rate 1048576
+```
+
+`--limit-rate 1048576` caps a download at 1 MiB/s (1,048,576 bytes per second)
+across all its connections. Supply a positive integer in bytes per second; omit
+it for unlimited speed. Suffixes such as `1MiB` and zero are rejected. Legacy
+`rustdm URL -o FILE --limit-rate N` syntax also works.
+
+The engine paces response-body consumption in small slices, including fallback
+and unknown-length streams. Retries share the same limiter. Saved resume bytes
+are not charged again, and Ctrl+C interrupts throttled waits. Network/TLS headers,
+probe traffic, and buffering in HTTP/TCP layers are outside this budget; short
+network bursts can occur and actual throughput can be lower than the cap.
+This is a per-download limit; separate RustDM processes have independent budgets.
+Direct resumes may choose a different rate by supplying the option again.
+Queued jobs persist their rate for later attempts; older records default to
+unlimited. Changing a running job's rate is a future feature.
 
 ## Queue and history
 

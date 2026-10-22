@@ -21,11 +21,20 @@ enqueue time; the queued URL and destination are immutable. IDs increase as jobs
 are added. Duplicate unfinished destinations are rejected. Retry the existing
 job or choose a different destination.
 
-`queue add` accepts connection/retry settings and `--resume` for an existing
+`queue add` accepts connection/retry settings, `--limit-rate BYTES_PER_SECOND`,
+and `--resume` for an existing
 partial download. Subsequent attempts automatically request resume when saved
 download metadata exists; the manager still checks remote identity before reuse.
 Servers without usable ranges/validators cannot resume their partial data and
 need a new destination for a fresh download.
+
+A bandwidth limit is a positive integer in bytes per second, shared across all
+connections of that job. For example, `queue add URL -o FILE --limit-rate 1048576`
+sets 1 MiB/s. It is persisted as optional `bandwidth_limit` in job snapshots and
+reused on retry/resume. Missing limits in existing version-1 records mean
+unlimited speed. Zero or invalid saved limits are rejected without rewriting the
+snapshot. Jobs execute sequentially, so each job uses its own configured cap.
+There is currently no command to edit a queued limit.
 
 ## Lifecycle
 

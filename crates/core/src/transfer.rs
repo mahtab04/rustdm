@@ -1,5 +1,6 @@
 use crate::{
     CancellationToken,
+    bandwidth::BandwidthLimiter,
     domain::{Progress, ProgressObserver, Remote, Segment, Validator},
     http::{identity, range_header, text_header, validator},
     state::part_size,
@@ -26,6 +27,7 @@ pub(crate) struct SegmentWorker {
     pub(crate) retries: u32,
     pub(crate) downloaded: Arc<AtomicU64>,
     pub(crate) cancel: CancellationToken,
+    pub(crate) limiter: Arc<BandwidthLimiter>,
 }
 
 impl SegmentWorker {
@@ -109,16 +111,19 @@ impl SegmentWorker {
                     chunk.len() as u64 <= expected - received,
                     "Server sent bytes outside the requested range"
                 );
-                file.write_all(&chunk)?;
-                received += chunk.len() as u64;
-                let downloaded = self
-                    .downloaded
-                    .fetch_add(chunk.len() as u64, Ordering::Relaxed)
-                    + chunk.len() as u64;
-                progress.on_progress(Progress {
-                    downloaded,
-                    total: Some(self.total),
-                });
+                for slice in chunk.chunks(self.limiter.chunk_size()) {
+                    self.limiter.consume(slice.len(), &self.cancel).await?;
+                    file.write_all(slice)?;
+                    received += slice.len() as u64;
+                    let downloaded = self
+                        .downloaded
+                        .fetch_add(slice.len() as u64, Ordering::Relaxed)
+                        + slice.len() as u64;
+                    progress.on_progress(Progress {
+                        downloaded,
+                        total: Some(self.total),
+                    });
+                }
             }
             ensure!(received == expected, "Range response ended early");
             Ok(())
@@ -135,6 +140,7 @@ pub(crate) async fn sequential(
     path: &Path,
     cancel: &CancellationToken,
     progress: &dyn ProgressObserver,
+    limiter: &BandwidthLimiter,
 ) -> Result<u64> {
     let mut response = tokio::select! {
         _ = cancel.cancelled() => bail!("Download paused"),
@@ -167,15 +173,19 @@ pub(crate) async fn sequential(
             let Some(chunk) = chunk else {
                 break;
             };
-            downloaded = downloaded
+            let next = downloaded
                 .checked_add(chunk.len() as u64)
                 .context("Download size overflow")?;
             ensure!(
-                total.is_none_or(|total| downloaded <= total),
+                total.is_none_or(|total| next <= total),
                 "Response exceeds the expected file size"
             );
-            file.write_all(&chunk)?;
-            progress.on_progress(Progress { downloaded, total });
+            for slice in chunk.chunks(limiter.chunk_size()) {
+                limiter.consume(slice.len(), cancel).await?;
+                file.write_all(slice)?;
+                downloaded += slice.len() as u64;
+                progress.on_progress(Progress { downloaded, total });
+            }
         }
         ensure!(
             total.is_none_or(|total| downloaded == total),

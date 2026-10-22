@@ -1,5 +1,6 @@
 use crate::{
     CancellationToken,
+    bandwidth::BandwidthLimiter,
     domain::{DownloadOptions, DownloadSummary, Progress, ProgressObserver},
     http::HttpSource,
     state::{DownloadState, part_size},
@@ -37,6 +38,10 @@ impl DownloadManager {
             "Connections must be between 1 and 16"
         );
         ensure!(options.retries <= 10, "Retries must be between 0 and 10");
+        ensure!(
+            options.bandwidth_limit != Some(0),
+            "Bandwidth limit must be greater than zero"
+        );
         let url = Url::parse(&options.url).context("Invalid download URL")?;
         ensure!(
             matches!(url.scheme(), "http" | "https"),
@@ -49,6 +54,7 @@ impl DownloadManager {
             .await?;
         let manifest = state.load_or_create(options, &remote)?;
         let progress: Arc<dyn ProgressObserver> = Arc::new(observer);
+        let limiter = Arc::new(BandwidthLimiter::new(options.bandwidth_limit));
         let mut resumed_bytes = 0;
         let (bytes, part_count) = if manifest.segmented {
             let size = manifest.size.unwrap();
@@ -78,6 +84,7 @@ impl DownloadManager {
                     retries: options.retries,
                     downloaded: downloaded.clone(),
                     cancel: group_cancel.clone(),
+                    limiter: limiter.clone(),
                 };
                 let progress = progress.clone();
                 tasks.spawn(async move { worker.run(progress.as_ref()).await });
@@ -105,6 +112,7 @@ impl DownloadManager {
                     &state.part_path(0),
                     &cancel,
                     progress.as_ref(),
+                    &limiter,
                 )
                 .await;
                 let done = attempt_result.is_ok() || cancel.is_cancelled();

@@ -14,5 +14,9 @@ cargo run -p rustdm -- queue run
 cargo run -p rustdm -- history --json
 ```
 
+Use `--limit-rate BYTES_PER_SECOND` on direct downloads or `queue add` to cap
+aggregate body throughput across the job's connections. Omit for unlimited speed.
+For example, `--limit-rate 1048576` sets 1 MiB/s.
+
 See [the project README](../../README.md) for resume behavior and limitations.
 See [queue commands](../../docs/QUEUE.md) for persistent jobs and history.

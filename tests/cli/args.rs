@@ -37,3 +37,44 @@ fn state_directory_is_global_and_queue_commands_need_no_download_arguments() {
     assert!(Cli::try_parse_from(["rustdm", "history", "--json"]).is_ok());
     assert!(Cli::try_parse_from(["rustdm", "download"]).is_err());
 }
+
+#[test]
+fn bandwidth_limit_parses_for_direct_and_queued_downloads() {
+    for prefix in [vec![], vec!["download"], vec!["queue", "add"]] {
+        let mut args = vec!["rustdm"];
+        args.extend(prefix);
+        args.extend([
+            "https://example.test/a",
+            "-o",
+            "a.bin",
+            "--limit-rate",
+            "65536",
+        ]);
+        let cli = Cli::try_parse_from(args).unwrap();
+        let options = match cli.command {
+            None => cli.direct.into_options(),
+            Some(Command::Download(args))
+            | Some(Command::Queue {
+                action: QueueCommand::Add(args),
+            }) => args.into_options(),
+            _ => panic!("Unexpected command"),
+        }
+        .unwrap();
+        assert_eq!(options.bandwidth_limit(), Some(65536));
+    }
+    for invalid in ["0", "-1", "1MiB", "18446744073709551616"] {
+        assert!(
+            Cli::try_parse_from([
+                "rustdm",
+                "https://example.test/a",
+                "-o",
+                "a",
+                "--limit-rate",
+                invalid
+            ])
+            .is_err()
+        );
+    }
+    let cli = Cli::try_parse_from(["rustdm", "--limit-rate", "1", "queue", "run"]).unwrap();
+    assert!(cli.direct.ensure_no_overrides().is_err());
+}

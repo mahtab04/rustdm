@@ -48,6 +48,8 @@ pub struct QueueJob {
     pub(crate) connections: usize,
     pub(crate) retries: u32,
     pub(crate) resume: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) bandwidth_limit: Option<u64>,
     pub(crate) state: JobState,
     pub(crate) created_at: u64,
     pub(crate) updated_at: u64,
@@ -67,16 +69,23 @@ impl QueueJob {
     pub fn state(&self) -> JobState {
         self.state
     }
+    pub fn bandwidth_limit(&self) -> Option<u64> {
+        self.bandwidth_limit
+    }
     pub fn attempt_count(&self) -> usize {
         self.attempts.len()
     }
 
     pub(crate) fn options(&self) -> DownloadOptions {
         let resume = self.resume || state_directory(&self.output).join("manifest.json").exists();
-        DownloadOptions::new(&self.url, &self.output)
+        let mut options = DownloadOptions::new(&self.url, &self.output)
             .with_connections(self.connections)
             .with_retries(self.retries)
-            .with_resume(resume)
+            .with_resume(resume);
+        if let Some(rate) = self.bandwidth_limit {
+            options = options.with_bandwidth_limit(rate);
+        }
+        options
     }
 }
 

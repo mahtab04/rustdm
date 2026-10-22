@@ -48,6 +48,10 @@ impl Document {
                 (1..=16).contains(&job.connections) && job.retries <= 10,
                 "Invalid saved queue options"
             );
+            ensure!(
+                job.bandwidth_limit != Some(0),
+                "Invalid saved bandwidth limit"
+            );
             for (index, attempt) in job.attempts.iter().enumerate() {
                 ensure!(
                     attempt.state != JobState::Pending,
@@ -178,6 +182,10 @@ impl DownloadQueue {
             (1..=16).contains(&options.connections) && options.retries <= 10,
             "Invalid queue options"
         );
+        ensure!(
+            options.bandwidth_limit != Some(0),
+            "Bandwidth limit must be greater than zero"
+        );
         let output = std::path::absolute(&options.output)?;
         ensure!(
             output.file_name().is_some() && !output.exists(),
@@ -189,9 +197,19 @@ impl DownloadQueue {
             let id = document.next_id;
             document.next_id = id.checked_add(1).context("Queue ID limit reached")?;
             let now = timestamp()?;
-            document.jobs.push(QueueJob { id, url: options.url, output, connections: options.connections,
-                retries: options.retries, resume: options.resume, state: JobState::Pending,
-                created_at: now, updated_at: now, attempts: Vec::new() });
+            document.jobs.push(QueueJob {
+                id,
+                url: options.url,
+                output,
+                connections: options.connections,
+                retries: options.retries,
+                resume: options.resume,
+                bandwidth_limit: options.bandwidth_limit,
+                state: JobState::Pending,
+                created_at: now,
+                updated_at: now,
+                attempts: Vec::new(),
+            });
             Ok(id)
         })
     }

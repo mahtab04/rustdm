@@ -2,6 +2,7 @@
 //! Compose a [`DownloadManager`] with [`DownloadOptions`], an observer, and a
 //! cancellation token. HTTP details and persistent state stay encapsulated.
 
+mod bandwidth;
 mod domain;
 mod http;
 mod manager;

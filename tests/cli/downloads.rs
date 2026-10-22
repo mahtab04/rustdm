@@ -624,3 +624,130 @@ fn cli_queue_and_history_survive_separate_processes() {
         serde_json::from_slice(&unchanged_history.stdout).unwrap();
     assert_eq!(unchanged_history.as_array().unwrap().len(), 2);
 }
+
+#[tokio::test]
+async fn bandwidth_limit_is_aggregate_for_parallel_fallback_and_unknown_length() {
+    // Four independent per-connection caps would incorrectly finish in ~0.5s.
+    for mode in [0, 1, 4, 5] {
+        let server = Server::new(mode);
+        let temp = tempfile::tempdir().unwrap();
+        let output = temp.path().join("limited.bin");
+        let start = std::time::Instant::now();
+        let summary = tokio::time::timeout(
+            Duration::from_secs(20),
+            download(
+                &server.options(&output).with_bandwidth_limit(65536),
+                CancellationToken::new(),
+                |_| {},
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(
+            start.elapsed() >= Duration::from_millis(1950),
+            "Aggregate cap exceeded in mode {mode}"
+        );
+        assert_eq!(
+            summary.connections,
+            if mode == 0 || mode == 4 { 4 } else { 1 }
+        );
+        assert_eq!(fs::read(output).unwrap(), *server.data);
+    }
+}
+
+#[tokio::test]
+async fn throttled_waits_cancel_promptly_and_resume_with_a_new_rate() {
+    for mode in [0, 1] {
+        let server = Server::new(mode);
+        let temp = tempfile::tempdir().unwrap();
+        let output = temp.path().join("paused-limit.bin");
+        let cancel = CancellationToken::new();
+        let trigger = cancel.clone();
+        let (result, ()) = tokio::join!(
+            async {
+                tokio::time::timeout(
+                    Duration::from_secs(3),
+                    download(
+                        &server.options(&output).with_bandwidth_limit(1),
+                        cancel,
+                        |_| {},
+                    ),
+                )
+                .await
+                .unwrap()
+            },
+            async {
+                tokio::time::sleep(Duration::from_millis(150)).await;
+                trigger.cancel();
+            }
+        );
+        assert!(result.is_err());
+        assert!(!output.exists());
+        if mode == 0 {
+            download(
+                &server
+                    .options(&output)
+                    .with_resume(true)
+                    .with_bandwidth_limit(262144),
+                CancellationToken::new(),
+                |_| {},
+            )
+            .await
+            .unwrap();
+            assert_eq!(fs::read(output).unwrap(), *server.data);
+        }
+    }
+}
+
+#[tokio::test]
+async fn zero_bandwidth_is_rejected_before_creating_download_state() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("zero.bin");
+    let error = download(
+        &DownloadOptions::new("http://127.0.0.1:1/file", &output).with_bandwidth_limit(0),
+        CancellationToken::new(),
+        |_| {},
+    )
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("greater than zero"));
+    assert!(!state_directory(&output).exists());
+}
+
+#[test]
+fn cli_persists_and_executes_a_queued_bandwidth_limit() {
+    let server = Server::new(0);
+    let temp = tempfile::tempdir().unwrap();
+    let state = temp.path().join("jobs");
+    let output = temp.path().join("queued-limit.bin");
+    let invoke = |args: &[&str]| {
+        let result = std::process::Command::new(env!("CARGO_BIN_EXE_rustdm"))
+            .arg("--state-dir")
+            .arg(&state)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    };
+    invoke(&[
+        "queue",
+        "add",
+        &server.url,
+        "-o",
+        output.to_str().unwrap(),
+        "--limit-rate",
+        "65536",
+    ]);
+    let queue = DownloadQueue::open(&state).unwrap();
+    assert_eq!(queue.jobs().unwrap()[0].bandwidth_limit(), Some(65536));
+    let start = std::time::Instant::now();
+    invoke(&["queue", "run"]);
+    assert!(start.elapsed() >= Duration::from_millis(1950));
+    assert_eq!(fs::read(output).unwrap(), *server.data);
+    assert_eq!(queue.jobs().unwrap()[0].state(), JobState::Completed);
+}

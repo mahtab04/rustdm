@@ -71,6 +71,9 @@ pub(crate) struct DownloadArgs {
     /// Request header; repeat for cookies, referrer, authorization, etc.
     #[arg(short = 'H', long = "header", value_name = "NAME: VALUE")]
     headers: Vec<String>,
+    /// Aggregate bytes per second across connections; omit for unlimited speed
+    #[arg(long, value_name = "BYTES_PER_SECOND", value_parser = clap::value_parser!(u64).range(1..))]
+    limit_rate: Option<u64>,
 }
 
 impl DownloadArgs {
@@ -79,6 +82,7 @@ impl DownloadArgs {
             self.url.is_none()
                 && self.output.is_none()
                 && self.headers.is_empty()
+                && self.limit_rate.is_none()
                 && !self.resume
                 && self.connections == 4
                 && self.retries == 3,
@@ -95,6 +99,9 @@ impl DownloadArgs {
         .with_connections(self.connections.into())
         .with_retries(self.retries.into())
         .with_resume(self.resume);
+        if let Some(rate) = self.limit_rate {
+            options = options.with_bandwidth_limit(rate);
+        }
         for header in self.headers {
             let (name, value) = header.split_once(':').context("Use -H \"Name: Value\"")?;
             options = options.with_header(name.trim(), value.trim());

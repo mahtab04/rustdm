@@ -37,6 +37,7 @@ flowchart TD
 | `crates/core/src/http.rs` | HTTP configuration, probing, and response-header validation |
 | `crates/core/src/state.rs` | Manifest, exclusive lock, assembly, and publication |
 | `crates/core/src/transfer.rs` | Range workers and single-stream transfer |
+| `crates/core/src/bandwidth.rs` | Shared response-body pacing and cancellable waits |
 | `crates/core/src/metrics.rs` | Recent transfer speed and ETA measurement |
 | `crates/core/src/queue/model.rs` | Job states, snapshots, attempts, events, and run results |
 | `crates/core/src/queue/store.rs` | Atomic queue transactions, locks, history, and recovery |
@@ -112,6 +113,22 @@ The manifest stores URLs, size, validators, and segment layout. Request headers
 are supplied in memory and must be supplied again for authenticated resume.
 Static segments and some blocking local file I/O remain deliberate initial
 constraints; further performance work belongs to the CLI milestone.
+
+## Bandwidth pacing
+
+`DownloadOptions::with_bandwidth_limit(bytes_per_second)` sets an optional positive
+aggregate byte rate; `bandwidth_limit()` reads it. The manager validates zero
+before acquiring output state, then creates one `Arc<BandwidthLimiter>` per
+execution. Range workers and single-stream retries use this same instance.
+
+The limiter serializes byte budgets through an async mutex and cancellable timer.
+Body chunks are split into slices of at most 16 KiB (smaller at low rates), then
+paced before writing and reporting progress. Idle time does not accumulate burst
+credit. Existing resume bytes bypass the limiter. Timer granularity, server speed,
+and local I/O can lower throughput; this limits consumed body data rather than
+exact wire traffic, HTTP headers, probing, or transport buffering. Independent
+manager executions have independent budgets. Queued jobs persist the optional
+rate and restore it through their normal options builder.
 
 ## Persistent queue
 

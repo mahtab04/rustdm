@@ -152,3 +152,33 @@ fn duplicate_outputs_and_persisted_credentials_are_rejected() {
     let raw = fs::read_to_string(queue.directory().join("queue.json")).unwrap();
     assert!(!raw.contains("never-persist-this") && !raw.contains("password"));
 }
+
+#[test]
+fn bandwidth_limits_persist_and_old_queue_records_remain_unlimited() {
+    let temp = tempfile::tempdir().unwrap();
+    let queue = DownloadQueue::open(temp.path().join("jobs")).unwrap();
+    assert!(
+        queue
+            .enqueue(options(temp.path().join("zero.bin")).with_bandwidth_limit(0))
+            .is_err()
+    );
+    queue
+        .enqueue(options(temp.path().join("limited.bin")).with_bandwidth_limit(65536))
+        .unwrap();
+    queue
+        .enqueue(options(temp.path().join("legacy.bin")))
+        .unwrap();
+    let reopened = DownloadQueue::open(queue.directory()).unwrap();
+    let jobs = reopened.jobs().unwrap();
+    assert_eq!(jobs[0].bandwidth_limit(), Some(65536));
+    assert_eq!(jobs[0].options().bandwidth_limit(), Some(65536));
+    assert_eq!(jobs[1].options().bandwidth_limit(), None);
+    let path = queue.directory().join("queue.json");
+    let mut json: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert!(json["jobs"][1].get("bandwidth_limit").is_none());
+    json["jobs"][0]["bandwidth_limit"] = 0.into();
+    let invalid = serde_json::to_vec(&json).unwrap();
+    fs::write(&path, &invalid).unwrap();
+    assert!(reopened.jobs().is_err());
+    assert_eq!(fs::read(path).unwrap(), invalid);
+}

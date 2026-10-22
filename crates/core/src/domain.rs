@@ -8,6 +8,7 @@ pub struct DownloadOptions {
     pub(crate) connections: usize,
     pub(crate) retries: u32,
     pub(crate) resume: bool,
+    pub(crate) bandwidth_limit: Option<u64>,
     /// Request context such as Referer, Cookie, or Authorization. Never persisted.
     pub(crate) headers: Vec<(String, String)>,
 }
@@ -20,6 +21,7 @@ impl DownloadOptions {
             connections: 4,
             retries: 3,
             resume: false,
+            bandwidth_limit: None,
             headers: Vec::new(),
         }
     }
@@ -69,6 +71,15 @@ impl DownloadOptions {
     pub fn with_retries(mut self, retries: u32) -> Self {
         self.retries = retries;
         self
+    }
+    /// Limit aggregate body consumption in bytes per second across all connections.
+    /// Zero is rejected when downloading or enqueueing. Omit for unlimited speed.
+    pub fn with_bandwidth_limit(mut self, bytes_per_second: u64) -> Self {
+        self.bandwidth_limit = Some(bytes_per_second);
+        self
+    }
+    pub fn bandwidth_limit(&self) -> Option<u64> {
+        self.bandwidth_limit
     }
     pub fn with_resume(mut self, resume: bool) -> Self {
         self.resume = resume;
