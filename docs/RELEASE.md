@@ -1,7 +1,9 @@
 # CLI release process
 
-The CLI currently reports version **0.1.0**. Release automation is prepared;
-this document does not imply that a public release has been published.
+The CLI currently reports version **0.1.0**. The first public release was
+published on 2026-10-22: [RustDM v0.1.0](https://github.com/mahtab04/rustdm/releases/tag/v0.1.0).
+Windows and Linux package checks passed before publication; archive and binary
+hashes and source-commit metadata were independently verified.
 The CLI milestone remains active while the roadmap has unfinished engine work.
 
 ## Packages

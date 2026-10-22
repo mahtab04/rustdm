@@ -21,7 +21,7 @@ tests, documentation, and reviewable Git commits before moving on.
 - [x] Large-file resume with changed connection limits and weak-ETag/Last-Modified coverage.
 - [ ] Split already active slow ranges and expand server interoperability coverage.
 - [x] Windows/Linux package automation, archive checksums, and release checklist.
-- [ ] Review and publish the first versioned CLI release.
+- [x] Published [v0.1.0 CLI](https://github.com/mahtab04/rustdm/releases/tag/v0.1.0) with verified Windows/Linux packages.
 
 Exit criteria: reliable download/resume workflow, queue/history, documented
 limitations, and passing supported-platform checks.

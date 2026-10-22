@@ -65,7 +65,9 @@ To run from source, use `cargo run -p rustdm -- --help`.
 
 CI also packages portable Windows/Linux builds with SHA-256 checksum files.
 See [release packaging and checklist](docs/RELEASE.md) for artifact verification
-and the draft-release workflow. A public CLI release has not been published yet.
+and the draft-release workflow. Download the published
+[v0.1.0 CLI release](https://github.com/mahtab04/rustdm/releases/tag/v0.1.0)
+for Windows x86-64 or Linux x86-64.
 
 ## Download and resume
 

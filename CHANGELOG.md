@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## [0.1.0](https://github.com/mahtab04/rustdm/releases/tag/v0.1.0) - 2026-10-22
+
+- Published the first CLI release with verified Windows x86-64 ZIP and Linux
+  x86-64 tar.gz downloads, SHA-256 files, and source/build metadata.
+
 ### CLI release preparation
 
 - Added native Windows ZIP and Linux tar.gz packages with archive SHA-256 files
@@ -9,8 +14,7 @@
 - CI now verifies and smoke-tests extracted packages and retains branch artifacts.
 - Added reusable CI and a version-tag workflow that creates a draft release only
   after both platforms pass. Tags must match the workspace/executable version.
-- Added v0.1.0 candidate notes and a release checklist; no release is published
-  by this preparation step.
+- Added v0.1.0 release notes and a checklist for validating and publishing drafts.
 
 ### Dynamic range scheduling
 
