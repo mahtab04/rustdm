@@ -23,10 +23,10 @@ jobs:
         with:
           components: rustfmt, clippy
       - name: Formatting
-        run: cargo fmt --check
+        run: cargo fmt --all --check
       - name: Lints
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Tests
-        run: cargo test --locked
+        run: cargo test --workspace --locked
       - name: Release build
-        run: cargo build --release --locked
+        run: cargo build --workspace --release --locked

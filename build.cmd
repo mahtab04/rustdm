@@ -17,7 +17,7 @@ if not defined VSCMD_VER (
 pushd "%~dp0"
 if errorlevel 1 exit /b 1
 if "%~1"=="" (
-    cargo build --release --locked
+    cargo build --workspace --release --locked
 ) else (
     cargo %*
 )
