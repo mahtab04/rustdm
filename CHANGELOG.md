@@ -2,9 +2,22 @@
 
 ## Unreleased
 
+### Workspace and RustDM rename
+
+- Renamed the project, executable, and GitHub repository to RustDM (Rust Download
+  Manager). Existing Git history is preserved.
+- Split the Cargo workspace into `rustdm-core` under `crates/core` and the
+  `rustdm` application under `apps/cli`, with shared versions and dependencies.
+- Added documented folders for future desktop UI, web, and browser integration.
+- Added reusable speed/ETA measurements and a terminal progress renderer.
+- Coalesced terminal progress events through a watch channel to retain completion
+  without an unbounded queue of updates.
+- New downloads use `.rustdm` state directories. Existing `.rustidm` directories
+  can resume in place when a current-name directory does not already exist.
+
 ### Added
 
-- RustIDM CLI for HTTP/HTTPS downloads with parallel byte ranges, retries,
+- RustDM CLI for HTTP/HTTPS downloads with parallel byte ranges, retries,
   cancellation, progress, and resumable partial files.
 - Range and validator checks, single-stream fallback, exclusive output locking,
   and publication that preserves an existing destination.
@@ -16,5 +29,3 @@
 ### Changed
 
 - Split the engine into domain, HTTP, state, transfer, and manager modules.
-- Renamed the package and executable from `rustdm` to `rustidm`. New downloads
-  use `.rustidm` sidecar directories; old `.rustdm` sidecars are not migrated.

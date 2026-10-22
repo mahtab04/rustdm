@@ -1,12 +1,15 @@
 # Project working agreement
 
-- Build RustIDM incrementally: finish the CLI milestone, then desktop UI, then
+- Build RustDM incrementally: finish the CLI milestone, then desktop UI, then
   browser integration and a web interface. Keep the current milestone in ROADMAP.md.
 - Use idiomatic Rust: encapsulated structs, methods, traits at real extension
   points, composition, and ownership. Keep user interfaces out of the core engine.
+- Keep shared code in crates/core, CLI code in apps/cli, future desktop code in
+  apps/ui, web code in apps/web, and browser adapters in extensions/browser.
 - Keep modules focused; avoid inheritance emulation, speculative abstractions,
   and duplicate download implementations for different interfaces.
-- Run formatting, Clippy with warnings denied, and relevant tests before a push.
+- Run workspace-wide formatting, Clippy with warnings denied, and relevant tests
+  before a push. Keep Cargo.lock and shared dependencies at the repository root.
 - Use Conventional Commits with one coherent change per commit. Update README,
   architecture documentation, and the changelog when behavior/interfaces change.
 - The user has requested ongoing commits and pushes for this project. Push tested

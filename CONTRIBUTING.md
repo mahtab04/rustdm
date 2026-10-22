@@ -7,15 +7,20 @@ call the same application service.
 ## Development checks
 
 ```sh
-cargo fmt --check
-cargo clippy --all-targets --locked -- -D warnings
-cargo test --locked
-cargo build --release --locked
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+cargo build --workspace --release --locked
 ```
 
 On Windows, run these from a Visual Studio Developer Command Prompt, or use
 `build.cmd test --locked` and `build.cmd clippy --all-targets --locked`. The helper
 discovers installed C++ tools with vswhere; Rust/Cargo must be on PATH.
+
+The repository is a Cargo workspace. Shared behavior belongs in `crates/core`;
+terminal behavior belongs in `apps/cli`. `apps/ui`, `apps/web`, and
+`extensions/browser` are reserved for later milestones. Use `cargo run -p rustdm`
+to select the current CLI application.
 
 Tests use an actual local HTTP server with known binary data. Add behavioral
 coverage for response validation, resumed state, cancellation, and output safety

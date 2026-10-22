@@ -1,8 +1,19 @@
 # Architecture
 
-RustIDM uses composition and ownership to separate application logic from its
+RustDM uses composition and ownership to separate application logic from its
 interfaces. Structs encapsulate state and expose methods; a trait expresses the
 progress interface that a CLI, desktop view, or browser adapter can implement.
+
+## Workspace boundaries
+
+`crates/core` builds the `rustdm-core` library. `apps/cli` builds the `rustdm`
+executable and depends on that library. The root manifest owns dependency
+versions, package metadata, lints, and release settings. Cargo.lock and target
+are shared across packages.
+
+`apps/ui`, `apps/web`, and `extensions/browser` currently contain design notes,
+not workspace packages or runnable interfaces. They will be added to the workspace
+when their milestones begin.
 
 ```mermaid
 flowchart TD
@@ -19,13 +30,15 @@ flowchart TD
 
 | Module | Responsibility |
 |---|---|
-| `domain.rs` | Options, progress/results, resource identity, and range planning |
-| `manager.rs` | Application service: validation, transfer orchestration, and completion |
-| `http.rs` | HTTP client configuration, probing, and response-header validation |
-| `state.rs` | Sidecar manifest, exclusive lock, part paths, assembly, and publication |
-| `transfer.rs` | Range workers and single-stream transfer with cancellation/retries |
-| `main.rs` | Argument parsing, Ctrl+C, progress rendering, and exit behavior |
-| `lib.rs` | Small public API and convenience entry point |
+| `crates/core/src/domain.rs` | Options, progress/results, resource identity, and range planning |
+| `crates/core/src/manager.rs` | Application service: validation, transfer orchestration, and completion |
+| `crates/core/src/http.rs` | HTTP configuration, probing, and response-header validation |
+| `crates/core/src/state.rs` | Manifest, exclusive lock, assembly, and publication |
+| `crates/core/src/transfer.rs` | Range workers and single-stream transfer |
+| `crates/core/src/metrics.rs` | Recent transfer speed and ETA measurement |
+| `apps/cli/src/main.rs` | Arguments, Ctrl+C, and exit behavior |
+| `apps/cli/src/progress.rs` | Terminal rendering and update throttling |
+| `crates/core/src/lib.rs` | Small public API and convenience entry point |
 
 ## Public API
 
@@ -35,7 +48,7 @@ flowchart TD
 it automatically. A cancellation token is shared with active transfers.
 
 ```rust,no_run
-use rustidm::{CancellationToken, DownloadManager, DownloadOptions, Progress};
+use rustdm_core::{CancellationToken, DownloadManager, DownloadOptions, Progress};
 
 # async fn example() -> anyhow::Result<()> {
 let options = DownloadOptions::new("https://example.com/archive.zip", "archive.zip")
@@ -70,6 +83,13 @@ Dropping `DownloadState` releases its OS file lock, including on errors. Failed
 range transfers retain their data; a subsequent manager validates resource
 identity before reuse. Progress callbacks may run concurrently and must be
 thread-safe. Interface adapters should enqueue events rather than block workers.
+
+`ProgressMeter` measures received-byte deltas over elapsed time and returns a
+`TransferMetrics` snapshot. The initial resumed byte count is a baseline, not
+new network traffic. Zero elapsed time, stream counter resets, unknown size,
+and zero speed produce explicit unknown estimates instead of invented rates.
+The CLI uses a watch channel to retain the newest sample, then renders at a
+bounded frequency. Other interfaces can use the same meter with their own view.
 
 The manifest stores URLs, size, validators, and segment layout. Request headers
 are supplied in memory and must be supplied again for authenticated resume.

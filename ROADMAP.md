@@ -12,8 +12,10 @@ tests, documentation, and reviewable Git commits before moving on.
 - [x] Existing-file preservation and exclusive writer locking.
 - [x] Shared object-oriented Rust core with focused modules.
 - [x] Local HTTP integration tests and project Git conventions.
+- [x] Workspace folders for core, CLI, desktop UI, web, and browser adapters.
+- [x] Live speed and ETA reporting with reusable transfer metrics.
 - [ ] Download queue and persistent job history.
-- [ ] Speed/ETA reporting and bandwidth limits.
+- [ ] Bandwidth limits.
 - [ ] Optional publisher-provided checksum verification.
 - [ ] Dynamic segment rebalancing and broader interoperability coverage.
 - [ ] Versioned CLI release and documented release checklist.
