@@ -132,7 +132,14 @@ impl DownloadManager {
         };
 
         state
-            .publish(&options.output, &manifest, part_count, bytes, &cancel)
+            .publish(
+                &options.output,
+                &manifest,
+                part_count,
+                bytes,
+                &cancel,
+                options.sha256.as_ref(),
+            )
             .await?;
         progress.on_progress(Progress {
             downloaded: bytes,

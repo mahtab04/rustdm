@@ -16,7 +16,7 @@ tests, documentation, and reviewable Git commits before moving on.
 - [x] Live speed and ETA reporting with reusable transfer metrics.
 - [x] Download queue and persistent job history.
 - [x] Per-download bandwidth limits shared across connections and retries.
-- [ ] Optional publisher-provided checksum verification.
+- [x] Optional publisher-provided SHA-256 checksum verification before publication.
 - [ ] Dynamic segment rebalancing and broader interoperability coverage.
 - [ ] Versioned CLI release and documented release checklist.
 

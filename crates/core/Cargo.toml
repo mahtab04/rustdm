@@ -12,6 +12,7 @@ categories = ["network-programming"]
 anyhow.workspace = true
 fs2.workspace = true
 reqwest.workspace = true
+ring.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true

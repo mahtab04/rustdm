@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, ensure};
 use clap::{Args, Parser, Subcommand};
-use rustdm_core::DownloadOptions;
+use rustdm_core::{DownloadOptions, Sha256Checksum};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -74,6 +74,9 @@ pub(crate) struct DownloadArgs {
     /// Aggregate bytes per second across connections; omit for unlimited speed
     #[arg(long, value_name = "BYTES_PER_SECOND", value_parser = clap::value_parser!(u64).range(1..))]
     limit_rate: Option<u64>,
+    /// Expected SHA-256 digest: exactly 64 hexadecimal characters
+    #[arg(long, value_name = "HEX")]
+    sha256: Option<Sha256Checksum>,
 }
 
 impl DownloadArgs {
@@ -83,6 +86,7 @@ impl DownloadArgs {
                 && self.output.is_none()
                 && self.headers.is_empty()
                 && self.limit_rate.is_none()
+                && self.sha256.is_none()
                 && !self.resume
                 && self.connections == 4
                 && self.retries == 3,
@@ -101,6 +105,9 @@ impl DownloadArgs {
         .with_resume(self.resume);
         if let Some(rate) = self.limit_rate {
             options = options.with_bandwidth_limit(rate);
+        }
+        if let Some(checksum) = self.sha256 {
+            options = options.with_sha256(checksum);
         }
         for header in self.headers {
             let (name, value) = header.split_once(':').context("Use -H \"Name: Value\"")?;

@@ -751,3 +751,175 @@ fn cli_persists_and_executes_a_queued_bandwidth_limit() {
     assert_eq!(fs::read(output).unwrap(), *server.data);
     assert_eq!(queue.jobs().unwrap()[0].state(), JobState::Completed);
 }
+
+// Generated independently with Python hashlib from the fixture's byte formula.
+const FIXTURE_SHA256: &str = "26611906c0bdd9c797dba923fcc5dd2cb7a1c035b4260b8bd5a30bb2a6e4a670";
+const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+#[tokio::test]
+async fn checksums_verify_parallel_fallback_unknown_length_and_empty_files() {
+    for mode in [0, 1, 5, 7] {
+        let server = Server::new(mode);
+        let temp = tempfile::tempdir().unwrap();
+        let output = temp.path().join("verified.bin");
+        let checksum = if mode == 7 {
+            EMPTY_SHA256
+        } else {
+            FIXTURE_SHA256
+        };
+        download(
+            &server
+                .options(&output)
+                .with_sha256(checksum.parse().unwrap()),
+            CancellationToken::new(),
+            |_| {},
+        )
+        .await
+        .unwrap();
+        assert_eq!(fs::read(&output).unwrap(), *server.data);
+        assert!(!state_directory(&output).exists());
+    }
+}
+
+#[tokio::test]
+async fn checksum_mismatch_never_publishes_and_complete_resumed_parts_are_rehashed() {
+    let server = Server::new(0);
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("mismatch.bin");
+    let wrong = "0".repeat(64).parse().unwrap();
+    let error = download(
+        &server.options(&output).with_sha256(wrong),
+        CancellationToken::new(),
+        |_| {},
+    )
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("SHA-256 mismatch"));
+    assert!(error.to_string().contains(FIXTURE_SHA256));
+    assert!(!output.exists());
+    let sidecar = state_directory(&output);
+    assert_eq!(fs::read_dir(&sidecar).unwrap().count(), 6); // manifest, lock, four parts; no temp assembly
+    // Corrupt a saved byte without changing part size: resume must verify it too.
+    let part = sidecar.join("part-000");
+    let mut bytes = fs::read(&part).unwrap();
+    bytes[0] ^= 0xff;
+    fs::write(&part, &bytes).unwrap();
+    let options = server
+        .options(&output)
+        .with_resume(true)
+        .with_sha256(FIXTURE_SHA256.parse().unwrap());
+    assert!(
+        download(&options, CancellationToken::new(), |_| {})
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("SHA-256 mismatch")
+    );
+    assert!(!output.exists());
+    bytes[0] ^= 0xff;
+    fs::write(&part, bytes).unwrap();
+    let summary = download(&options, CancellationToken::new(), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(summary.resumed_bytes, server.data.len() as u64);
+    assert_eq!(fs::read(&output).unwrap(), *server.data);
+    assert_eq!(
+        server
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|request| request.if_range.is_some())
+            .count(),
+        4
+    );
+}
+
+#[test]
+fn cli_queue_verifies_persisted_checksums_and_records_mismatch_history() {
+    let server = Server::new(0);
+    let temp = tempfile::tempdir().unwrap();
+    let state = temp.path().join("jobs");
+    let bad = temp.path().join("bad.bin");
+    let good = temp.path().join("good.bin");
+    let invoke = |args: &[&str]| {
+        std::process::Command::new(env!("CARGO_BIN_EXE_rustdm"))
+            .arg("--state-dir")
+            .arg(&state)
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    for (path, checksum) in [
+        (&bad, "0".repeat(64)),
+        (&good, FIXTURE_SHA256.to_uppercase()),
+    ] {
+        let result = invoke(&[
+            "queue",
+            "add",
+            &server.url,
+            "-o",
+            path.to_str().unwrap(),
+            "--sha256",
+            &checksum,
+        ]);
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+    let result = invoke(&["queue", "run"]);
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("SHA-256 mismatch"));
+    assert!(!bad.exists());
+    assert_eq!(fs::read(&good).unwrap(), *server.data);
+    let queue = DownloadQueue::open(&state).unwrap();
+    assert_eq!(
+        queue.jobs().unwrap()[1].sha256().unwrap().to_string(),
+        FIXTURE_SHA256
+    );
+    let history = queue.history().unwrap();
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0].state, JobState::Failed);
+    assert!(
+        history[0]
+            .error
+            .as_deref()
+            .unwrap()
+            .contains("SHA-256 mismatch")
+    );
+    assert_eq!(history[1].state, JobState::Completed);
+    assert!(invoke(&["queue", "retry", "1"]).status.success());
+    assert!(!invoke(&["queue", "run"]).status.success());
+    assert!(!bad.exists());
+    assert_eq!(queue.history().unwrap().len(), 3);
+}
+
+#[test]
+fn cli_direct_checksum_mismatch_exits_nonzero_and_accepts_a_corrected_digest_on_resume() {
+    let server = Server::new(0);
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("cli-verified.bin");
+    let invoke = |checksum: &str, resume: bool| {
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_rustdm"));
+        command
+            .args(["download", &server.url, "-o"])
+            .arg(&output)
+            .args(["--sha256", checksum]);
+        if resume {
+            command.arg("--resume");
+        }
+        command.output().unwrap()
+    };
+    let bad = invoke(&"0".repeat(64), false);
+    assert!(!bad.status.success());
+    assert!(!output.exists());
+    let good = invoke(FIXTURE_SHA256, true);
+    assert!(
+        good.status.success(),
+        "{}",
+        String::from_utf8_lossy(&good.stderr)
+    );
+    assert_eq!(fs::read(output).unwrap(), *server.data);
+}

@@ -37,6 +37,7 @@ flowchart TD
 | `crates/core/src/http.rs` | HTTP configuration, probing, and response-header validation |
 | `crates/core/src/state.rs` | Manifest, exclusive lock, assembly, and publication |
 | `crates/core/src/transfer.rs` | Range workers and single-stream transfer |
+| `crates/core/src/checksum.rs` | Validated SHA-256 value and incremental assembly verification |
 | `crates/core/src/bandwidth.rs` | Shared response-body pacing and cancellable waits |
 | `crates/core/src/metrics.rs` | Recent transfer speed and ETA measurement |
 | `crates/core/src/queue/model.rs` | Job states, snapshots, attempts, events, and run results |
@@ -93,7 +94,8 @@ the current concrete components are exercised through real HTTP behavior tests.
    ranges and a strong ETag or Last-Modified validator.
 4. Transfer non-overlapping segments into separate files, retrying missing bytes.
    Otherwise download a single stream, restarting that stream on retry.
-5. Verify sizes, assemble into a temporary file, sync it, and publish without
+5. Verify sizes, assemble into a temporary file, verify any expected SHA-256,
+   sync it, and publish without
    replacing an existing destination.
 6. Remove only known sidecar files after successful publication.
 
@@ -129,6 +131,29 @@ and local I/O can lower throughput; this limits consumed body data rather than
 exact wire traffic, HTTP headers, probing, or transport buffering. Independent
 manager executions have independent budgets. Queued jobs persist the optional
 rate and restore it through their normal options builder.
+
+## Checksum verification
+
+`Sha256Checksum` is a validated value object parsed from exactly 64 hexadecimal
+characters and normalized to lowercase. Its `FromStr` and Serde implementations
+share validation, so CLI arguments and persisted queue data follow the same
+contract. `DownloadOptions::with_sha256(checksum)` configures verification;
+`sha256()` reads the optional expectation.
+
+The state publisher streams each assembled buffer through `ChecksumVerifier`
+using ring's SHA-256 implementation (also already present through the TLS stack).
+Hashing shares the assembly pass, uses bounded memory, and covers saved and newly
+received bytes in final-file order. Before the no-clobber publication step, it
+compares the digest and checks cancellation. A mismatch drops the temporary
+assembly and retains the original parts; it never produces a successful summary.
+
+Direct-download expectations belong to each invocation and must be supplied again
+on resume; they are not part of the existing partial manifest. Queue snapshots
+persist `sha256` as an optional validated string and restore it on every attempt.
+Older records without it keep checksum verification disabled. Corrupt saved
+digests fail deserialization without rewriting the queue. Automatic deletion or
+redownload of checksum-mismatched parts is deliberately left to a future recovery
+workflow; a new output path starts a fresh download.
 
 ## Persistent queue
 

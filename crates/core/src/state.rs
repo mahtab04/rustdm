@@ -1,5 +1,6 @@
 use crate::{
-    CancellationToken,
+    CancellationToken, Sha256Checksum,
+    checksum::ChecksumVerifier,
     domain::{DownloadOptions, Remote, Segment, Validator},
 };
 use anyhow::{Context, Result, ensure};
@@ -167,6 +168,7 @@ impl DownloadState {
         part_count: usize,
         bytes: u64,
         cancel: &CancellationToken,
+        checksum: Option<&Sha256Checksum>,
     ) -> Result<()> {
         ensure!(
             !cancel.is_cancelled(),
@@ -174,6 +176,7 @@ impl DownloadState {
         );
         let mut assembled = tempfile::NamedTempFile::new_in(&self.directory)?;
         let mut copied = 0;
+        let mut verifier = checksum.map(ChecksumVerifier::new);
         // This buffer lives across an await. Keep it on the heap so composed
         // queue/CLI futures do not multiply its stack footprint on Windows.
         let mut buffer = vec![0u8; 64 * 1024];
@@ -197,6 +200,9 @@ impl DownloadState {
                     break;
                 }
                 assembled.write_all(&buffer[..count])?;
+                if let Some(verifier) = &mut verifier {
+                    verifier.update(&buffer[..count]);
+                }
                 copied += count as u64;
                 tokio::task::yield_now().await;
             }
@@ -204,6 +210,13 @@ impl DownloadState {
         ensure!(
             copied == bytes,
             "Assembled size does not match downloaded size"
+        );
+        if let Some(verifier) = verifier {
+            verifier.verify()?;
+        }
+        ensure!(
+            !cancel.is_cancelled(),
+            "Download paused before publication; partial files retained"
         );
         assembled.as_file().sync_all()?;
         assembled

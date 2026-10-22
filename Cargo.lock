@@ -862,6 +862,7 @@ dependencies = [
  "anyhow",
  "fs2",
  "reqwest",
+ "ring",
  "serde",
  "serde_json",
  "tempfile",

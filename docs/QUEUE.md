@@ -36,6 +36,20 @@ unlimited speed. Zero or invalid saved limits are rejected without rewriting the
 snapshot. Jobs execute sequentially, so each job uses its own configured cap.
 There is currently no command to edit a queued limit.
 
+`queue add URL -o FILE --sha256 HEX` persists an expected SHA-256 digest for every
+attempt. `HEX` must be exactly 64 hexadecimal characters; uppercase is normalized
+to lowercase. The optional `sha256` field appears in `queue list --json` when set;
+older records without it continue without checksum verification. Malformed saved
+digests are rejected without changing the snapshot.
+
+The complete assembly, including resumed parts, is verified before publication.
+A mismatch leaves the destination absent, retains partial files, and records a
+failed attempt with expected/actual hashes. Later jobs still run. `queue retry`
+keeps the same expectation and rechecks any saved bytes; it does not repair corrupt
+parts or edit the digest. Use a new destination/job for a fresh download or a
+corrected expectation. Progress reaching the total byte count does not by itself
+mean the job passed verification.
+
 ## Lifecycle
 
 | Current state | Trigger | Result |

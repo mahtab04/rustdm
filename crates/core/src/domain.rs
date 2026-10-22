@@ -1,3 +1,4 @@
+use crate::Sha256Checksum;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -9,6 +10,7 @@ pub struct DownloadOptions {
     pub(crate) retries: u32,
     pub(crate) resume: bool,
     pub(crate) bandwidth_limit: Option<u64>,
+    pub(crate) sha256: Option<Sha256Checksum>,
     /// Request context such as Referer, Cookie, or Authorization. Never persisted.
     pub(crate) headers: Vec<(String, String)>,
 }
@@ -22,6 +24,7 @@ impl DownloadOptions {
             retries: 3,
             resume: false,
             bandwidth_limit: None,
+            sha256: None,
             headers: Vec::new(),
         }
     }
@@ -80,6 +83,14 @@ impl DownloadOptions {
     }
     pub fn bandwidth_limit(&self) -> Option<u64> {
         self.bandwidth_limit
+    }
+    /// Verify the fully assembled file before publishing it to the destination.
+    pub fn with_sha256(mut self, checksum: Sha256Checksum) -> Self {
+        self.sha256 = Some(checksum);
+        self
+    }
+    pub fn sha256(&self) -> Option<&Sha256Checksum> {
+        self.sha256.as_ref()
     }
     pub fn with_resume(mut self, resume: bool) -> Self {
         self.resume = resume;

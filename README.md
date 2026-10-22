@@ -7,8 +7,8 @@ integration, and a web interface. The shared download engine is available as a
 library so each interface uses the same behavior.
 
 **Current milestone:** CLI. Parallel downloads, validated resume, live progress,
-a persistent queue, attempt history, and bandwidth limits are implemented.
-Checksum verification is next.
+a persistent queue, attempt history, bandwidth limits, and optional SHA-256
+verification are implemented.
 
 ## Features
 
@@ -23,6 +23,7 @@ Checksum verification is next.
 - Encapsulated DownloadManager, builder-style options, and a progress observer.
 - Persistent queue with sequential execution, retry, and per-attempt history.
 - Per-download bandwidth caps shared across parallel connections and retries.
+- Optional SHA-256 verification before publishing the final file.
 
 ## Repository layout
 
@@ -88,6 +89,7 @@ Optional request context can be supplied with repeated headers:
 | `--resume` | Reuse validated partial files | Off |
 | `--retries` | Additional attempts, 0 to 10 | 3 |
 | `--limit-rate` | Aggregate body bytes per second, positive integer | Unlimited |
+| `--sha256` | Expected digest: 64 hexadecimal characters | No checksum verification |
 | `-H, --header` | Request header; repeatable | None |
 
 New partial state is stored in `<output>.rustdm/`. Resume requires matching source
@@ -98,7 +100,7 @@ although URL query parameters remain part of the saved source URL.
 
 Servers without usable ranges/validators use one stream. Retries restart that
 stream from zero; an interrupted non-resumable download currently requires a new
-output path. Segments are fixed at startup. Publisher hash verification, dynamic
+output path. Segments are fixed at startup. Dynamic segment
 rebalancing, desktop UI, browser capture, FTP, and media assembly are
 future milestones. Existing `.rustidm` partial directories are detected and
 resumed in place when there is no `.rustdm` directory for the same output.
@@ -128,6 +130,35 @@ This is a per-download limit; separate RustDM processes have independent budgets
 Direct resumes may choose a different rate by supplying the option again.
 Queued jobs persist their rate for later attempts; older records default to
 unlimited. Changing a running job's rate is a future feature.
+
+## Checksum verification
+
+Supply the publisher's expected SHA-256 digest with `--sha256`:
+
+```powershell
+.\target\release\rustdm.exe download "https://example.com/file.zip" -o file.zip --sha256 "<64-character SHA-256 digest>"
+.\target\release\rustdm.exe queue add "https://example.com/file.zip" -o queued.zip --sha256 "<64-character SHA-256 digest>"
+```
+
+Replace the placeholder with the actual digest from a trusted publisher source.
+Uppercase and lowercase hexadecimal are accepted. Invalid digests are rejected
+before HTTP requests or download state are created. Omit the option to use the
+existing size/range/validator checks without publisher checksum verification.
+Only SHA-256 is supported in this milestone.
+
+RustDM hashes the assembled bytes in order, including all saved resume data,
+before publishing the destination. A mismatch reports expected and actual hashes,
+returns a failure, and retains the partial files while leaving the destination
+absent. The temporary assembled file is removed. Existing destinations remain
+protected. Transfer progress can reach 100% before verification and publication
+finish; success is reported only after both complete.
+
+For direct downloads, supply `--sha256` again on every `--resume` invocation;
+the direct-download manifest does not store the expected digest. You may correct
+a mistyped expected digest when resuming. A correct expected digest cannot repair
+corrupt saved bytes: use a fresh output path to download again. Queued jobs persist
+the expected digest and automatically reapply it on every attempt. A mismatch
+records a failed attempt in history and allows later queued jobs to continue.
 
 ## Queue and history
 

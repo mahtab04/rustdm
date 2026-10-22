@@ -205,6 +205,7 @@ impl DownloadQueue {
                 retries: options.retries,
                 resume: options.resume,
                 bandwidth_limit: options.bandwidth_limit,
+                sha256: options.sha256,
                 state: JobState::Pending,
                 created_at: now,
                 updated_at: now,

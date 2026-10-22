@@ -5,10 +5,11 @@ component they exercise.
 
 | Folder | Coverage |
 |---|---|
+| `core/checksum.rs` | Digest validation, serialization, and known SHA-256 vectors |
 | `core/metrics.rs` | Transfer speed and ETA calculations |
 | `core/queue/` | Queue persistence, locking, recovery, and history |
 | `cli/args.rs` | Argument parsing, rate validation, and command compatibility |
-| `cli/downloads.rs` | HTTP transfers, aggregate pacing, cancellation/resume, queue execution, and CLI subprocesses |
+| `cli/downloads.rs` | HTTP transfers, checksum/publication safety, aggregate pacing, cancellation/resume, queue execution, and CLI subprocesses |
 | `ui/` | Reserved for desktop UI tests |
 | `web/` | Reserved for web interface tests |
 | `browser/` | Reserved for browser integration tests |

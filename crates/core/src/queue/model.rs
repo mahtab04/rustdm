@@ -1,4 +1,4 @@
-use crate::{DownloadOptions, state_directory};
+use crate::{DownloadOptions, Sha256Checksum, state_directory};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt,
@@ -50,6 +50,8 @@ pub struct QueueJob {
     pub(crate) resume: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) bandwidth_limit: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) sha256: Option<Sha256Checksum>,
     pub(crate) state: JobState,
     pub(crate) created_at: u64,
     pub(crate) updated_at: u64,
@@ -72,6 +74,9 @@ impl QueueJob {
     pub fn bandwidth_limit(&self) -> Option<u64> {
         self.bandwidth_limit
     }
+    pub fn sha256(&self) -> Option<&Sha256Checksum> {
+        self.sha256.as_ref()
+    }
     pub fn attempt_count(&self) -> usize {
         self.attempts.len()
     }
@@ -84,6 +89,9 @@ impl QueueJob {
             .with_resume(resume);
         if let Some(rate) = self.bandwidth_limit {
             options = options.with_bandwidth_limit(rate);
+        }
+        if let Some(checksum) = &self.sha256 {
+            options = options.with_sha256(checksum.clone());
         }
         options
     }

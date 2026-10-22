@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Checksum verification
+
+- Added optional `--sha256 HEX` verification for direct and queued downloads,
+  with strict 64-character hexadecimal validation and case normalization.
+- Added the shared `Sha256Checksum` value type and `DownloadOptions::with_sha256`.
+- Hash the complete assembly, including saved resume bytes, before publication;
+  mismatches retain parts, discard temporary assembly, and report failure.
+- Persist optional queue digests, keeping older records readable. Queue mismatches
+  are failed attempts and do not block later jobs.
+- Added known hash vectors, local HTTP verification, corrupt-resume safety,
+  CLI exit behavior, queue history, and malformed saved-digest coverage.
+
 ### Bandwidth limits
 
 - Added `--limit-rate BYTES_PER_SECOND` to direct downloads and `queue add`, with

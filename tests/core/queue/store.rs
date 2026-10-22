@@ -182,3 +182,34 @@ fn bandwidth_limits_persist_and_old_queue_records_remain_unlimited() {
     assert!(reopened.jobs().is_err());
     assert_eq!(fs::read(path).unwrap(), invalid);
 }
+
+#[test]
+fn checksums_survive_reopen_and_invalid_saved_digests_preserve_the_snapshot() {
+    let temp = tempfile::tempdir().unwrap();
+    let queue = DownloadQueue::open(temp.path().join("jobs")).unwrap();
+    let checksum: crate::Sha256Checksum = "AB".repeat(32).parse().unwrap();
+    queue
+        .enqueue(options(temp.path().join("verified.bin")).with_sha256(checksum.clone()))
+        .unwrap();
+    queue
+        .enqueue(options(temp.path().join("legacy.bin")))
+        .unwrap();
+    let reopened = DownloadQueue::open(queue.directory()).unwrap();
+    let jobs = reopened.jobs().unwrap();
+    assert_eq!(jobs[0].sha256(), Some(&checksum));
+    assert_eq!(jobs[0].options().sha256(), Some(&checksum));
+    assert!(jobs[1].sha256().is_none());
+    let path = queue.directory().join("queue.json");
+    let mut json: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert!(json["jobs"][1].get("sha256").is_none());
+    json["jobs"][0]["sha256"] = "invalid".into();
+    let invalid = serde_json::to_vec(&json).unwrap();
+    fs::write(&path, &invalid).unwrap();
+    assert!(reopened.jobs().is_err());
+    assert!(
+        reopened
+            .enqueue(options(temp.path().join("new.bin")))
+            .is_err()
+    );
+    assert_eq!(fs::read(path).unwrap(), invalid);
+}
