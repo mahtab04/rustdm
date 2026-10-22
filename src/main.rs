@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use rustdm::{CancellationToken, DownloadOptions, Progress, download};
+use rustidm::{CancellationToken, DownloadOptions, Progress, download};
 use std::{
     io::{self, Write},
     path::PathBuf,
@@ -44,14 +44,12 @@ fn format_size(bytes: u64) -> String {
 async fn main() -> Result<()> {
     let args = Args::parse();
     let mut options = DownloadOptions::new(args.url, args.output);
-    options.connections = args.connections.into();
-    options.retries = args.retries.into();
-    options.resume = args.resume;
+    options = options.with_connections(args.connections.into());
+    options = options.with_retries(args.retries.into());
+    options = options.with_resume(args.resume);
     for header in args.headers {
         let (name, value) = header.split_once(':').context("Use -H \"Name: Value\"")?;
-        options
-            .headers
-            .push((name.trim().into(), value.trim().into()));
+        options = options.with_header(name.trim(), value.trim());
     }
     let cancel = CancellationToken::new();
     let signal = cancel.clone();
@@ -88,7 +86,7 @@ async fn main() -> Result<()> {
     });
     eprintln!(
         "Downloading to {}. Ctrl+C pauses; range-capable downloads can resume.",
-        options.output.display()
+        options.output().display()
     );
     let result = download(&options, cancel, move |progress| {
         let _ = tx.try_send(progress);
@@ -101,7 +99,7 @@ async fn main() -> Result<()> {
         Ok(summary) => {
             println!(
                 "Saved {} ({} bytes, {} connection{}, {} bytes resumed).",
-                options.output.display(),
+                options.output().display(),
                 summary.bytes,
                 summary.connections,
                 if summary.connections == 1 { "" } else { "s" },

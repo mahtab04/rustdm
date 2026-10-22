@@ -1,8 +1,12 @@
 [package]
-name = "rustdm"
+name = "rustidm"
 version = "0.1.0"
 edition = "2024"
 description = "A resumable HTTP download manager with parallel byte ranges"
+readme = "README.md"
+repository = "https://github.com/mahtab04/rustidm"
+keywords = ["download", "http", "resume", "cli"]
+categories = ["command-line-utilities", "network-programming"]
 
 [dependencies]
 anyhow = "1"

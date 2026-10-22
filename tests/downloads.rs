@@ -1,11 +1,14 @@
-use rustdm::{CancellationToken, DownloadOptions, download, state_directory};
+use rustidm::{
+    CancellationToken, DownloadManager, DownloadOptions, Progress, ProgressObserver, download,
+    state_directory,
+};
 use std::{
     fs,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
     thread::{self, JoinHandle},
     time::Duration,
@@ -95,9 +98,7 @@ impl Server {
     }
 
     fn options(&self, output: impl Into<std::path::PathBuf>) -> DownloadOptions {
-        let mut options = DownloadOptions::new(&self.url, output);
-        options.retries = 0;
-        options
+        DownloadOptions::new(&self.url, output)
     }
 }
 
@@ -211,9 +212,7 @@ async fn parallel_download_is_byte_exact_and_forwards_request_context() {
     let temp = tempfile::tempdir().unwrap();
     let output = temp.path().join("parallel.bin");
     let mut options = server.options(&output);
-    options
-        .headers
-        .push(("Referer".into(), "https://example.test/page".into()));
+    options = options.with_header("Referer", "https://example.test/page");
     let result = download(&options, CancellationToken::new(), |_| {})
         .await
         .unwrap();
@@ -283,9 +282,13 @@ async fn malformed_ranges_and_full_responses_never_publish_a_file() {
         let temp = tempfile::tempdir().unwrap();
         let output = temp.path().join("invalid.bin");
         assert!(
-            download(&server.options(&output), CancellationToken::new(), |_| {})
-                .await
-                .is_err()
+            download(
+                &server.options(&output).with_retries(0),
+                CancellationToken::new(),
+                |_| {}
+            )
+            .await
+            .is_err()
         );
         assert!(!output.exists());
         assert!(state_directory(&output).join("manifest.json").exists());
@@ -298,8 +301,8 @@ async fn interrupted_connection_retries_only_missing_bytes() {
     let temp = tempfile::tempdir().unwrap();
     let output = temp.path().join("retry.bin");
     let mut options = server.options(&output);
-    options.connections = 1;
-    options.retries = 1;
+    options = options.with_connections(1);
+    options = options.with_retries(1);
     download(&options, CancellationToken::new(), |_| {})
         .await
         .unwrap();
@@ -325,7 +328,7 @@ async fn pause(server: &Server, options: &DownloadOptions) {
     })
     .await;
     assert!(result.is_err());
-    assert!(!options.output.exists());
+    assert!(!options.output().exists());
     server.slow.store(false, Ordering::SeqCst);
 }
 
@@ -341,10 +344,7 @@ async fn pause_and_resume_preserve_bytes_across_invocations() {
             .await
             .is_err()
     );
-    options.resume = true;
-    // Abandoned sockets can produce a transient Windows connection abort during
-    // rapid reconnect; exercise the engine's retry policy on the resumed run.
-    options.retries = 1;
+    options = options.with_resume(true);
     let result = download(&options, CancellationToken::new(), |_| {})
         .await
         .unwrap();
@@ -361,7 +361,7 @@ async fn changed_remote_file_is_rejected_before_reusing_saved_parts() {
     let mut options = server.options(&output);
     pause(&server, &options).await;
     *server.etag.lock().unwrap() = "\"fixture-v2\"".into();
-    options.resume = true;
+    options = options.with_resume(true);
     let error = download(&options, CancellationToken::new(), |_| {})
         .await
         .unwrap_err();
@@ -399,7 +399,7 @@ fn cli_downloads_a_file_with_the_real_executable() {
     let server = Server::new(0);
     let temp = tempfile::tempdir().unwrap();
     let output = temp.path().join("cli.bin");
-    let result = std::process::Command::new(env!("CARGO_BIN_EXE_rustdm"))
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_rustidm"))
         .arg(&server.url)
         .args(["--connections", "3", "--output"])
         .arg(&output)
@@ -433,4 +433,31 @@ async fn destination_created_during_download_is_never_overwritten() {
     .await;
     assert!(result.is_err());
     assert_eq!(fs::read(output).unwrap(), b"written by somebody else");
+}
+
+struct RecordingObserver(Arc<AtomicU64>);
+
+impl ProgressObserver for RecordingObserver {
+    fn on_progress(&self, progress: Progress) {
+        self.0.fetch_max(progress.downloaded, Ordering::SeqCst);
+    }
+}
+
+#[tokio::test]
+async fn manager_accepts_a_custom_progress_observer() {
+    let server = Server::new(0);
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("observer.bin");
+    let observed = Arc::new(AtomicU64::new(0));
+    let manager = DownloadManager::new(server.options(&output));
+    assert_eq!(manager.options().output(), output);
+    let summary = manager
+        .download(
+            CancellationToken::new(),
+            RecordingObserver(observed.clone()),
+        )
+        .await
+        .unwrap();
+    assert_eq!(observed.load(Ordering::SeqCst), summary.bytes);
+    assert_eq!(fs::read(output).unwrap(), *server.data);
 }
