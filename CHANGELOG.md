@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Browser bridge preview
+
+- Added Chromium/Firefox development extensions for reviewing a selected link or
+  pasted direct-file URL before enqueueing it. URLs use single-use session drafts.
+- Added `rustdm-browser-host`, composing the existing queue with versioned native
+  messaging, bounded frames, caller checks, and basename-only output selection.
+- Added current-user Windows/Linux setup, stable unpacked Chromium identity,
+  native host manifests, protocol documentation, and portable browser packages.
+- Added centralized Rust, dependency-free Node, and Python browser tests plus
+  an isolated Edge review/native-submission smoke test. CI verifies the bridge
+  through the real host and CLI against a local HTTP fixture on both platforms.
+- Public direct files are supported. Browser cookies, referrer/header forwarding,
+  interception, media assembly, and store publication remain later work.
+
 ### Windows system tray
 
 - Added a native Windows tray icon with Show RustDM, Start queue, Pause queue,

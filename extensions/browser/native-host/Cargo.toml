@@ -1,0 +1,22 @@
+[package]
+name = "rustdm-browser-host"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+description = "RustDM browser native messaging adapter"
+
+[dependencies]
+anyhow.workspace = true
+rustdm-core = { path = "../../../crates/core" }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[[test]]
+name = "native_host"
+path = "../../../tests/browser/native_host.rs"
+
+[lints]
+workspace = true

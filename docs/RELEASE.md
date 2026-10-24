@@ -42,6 +42,16 @@ they do not change the published v0.1.0 CLI assets. Ordinary main pushes only
 build/test/upload artifacts. Version-tag releases still create drafts and require
 separate publication.
 
+## Browser bridge previews
+
+CI also produces `rustdm-browser-vVERSION-TARGET.zip` / `.tar.gz`, containing the
+native host executable, Chromium/Firefox unpacked extensions, setup scripts, and
+protocol documentation. Register the extracted host and load the generated
+extension as described in [browser setup](../extensions/browser/README.md).
+These are development packages; browser stores and the existing v0.1.0 CLI release
+are unchanged. The extracted native host is checked with version/help commands.
+Node/Python integration checks run before packaging.
+
 ## Local packaging
 
 Python 3.12+ and the native Rust toolchain are required. Build and package from
@@ -51,6 +61,7 @@ the repository root on Windows:
 .\build.cmd build --workspace --release --locked
 python .github/scripts/package_release.py --target x86_64-pc-windows-msvc --binary target/release/rustdm.exe
 python .github/scripts/package_release.py --app desktop --target x86_64-pc-windows-msvc --binary target/release/rustdm-ui.exe
+python .github/scripts/package_release.py --app browser --target x86_64-pc-windows-msvc --binary target/release/rustdm-browser-host.exe
 python .github/scripts/check_package.py dist
 ```
 
@@ -60,6 +71,7 @@ On Linux:
 cargo build --workspace --release --locked
 python3 .github/scripts/package_release.py --target x86_64-unknown-linux-gnu --binary target/release/rustdm
 python3 .github/scripts/package_release.py --app desktop --target x86_64-unknown-linux-gnu --binary target/release/rustdm-ui
+python3 .github/scripts/package_release.py --app browser --target x86_64-unknown-linux-gnu --binary target/release/rustdm-browser-host
 python3 .github/scripts/check_package.py dist
 ```
 

@@ -1,0 +1,19 @@
+[
+  {"name":"file.zip","valid":true},
+  {"name":"report 2026.pdf","valid":true},
+  {"name":"résumé.txt","valid":true},
+  {"name":"","valid":false},
+  {"name":"..","valid":false},
+  {"name":"../escape.bin","valid":false},
+  {"name":"sub\\escape.bin","valid":false},
+  {"name":"D:\\escape.bin","valid":false},
+  {"name":"CON.txt","valid":false},
+  {"name":"CON .txt","valid":false},
+  {"name":"LPT1.zip","valid":false},
+  {"name":"COM¹.txt","valid":false},
+  {"name":"file:stream","valid":false},
+  {"name":"file.","valid":false},
+  {"name":"file ","valid":false},
+  {"name":"line\nfeed","valid":false},
+  {"name":"null\u0000byte","valid":false}
+]

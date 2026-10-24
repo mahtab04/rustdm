@@ -26,7 +26,7 @@ tests, documentation, and reviewable Git commits before moving on.
 Exit criteria: reliable download/resume workflow, queue/history, documented
 limitations, and passing supported-platform checks.
 
-## 2. Desktop UI - current milestone
+## 2. Desktop UI - preview
 
 - [x] Native Rust desktop framework: egui/eframe with the shared core.
 - [x] Modern dashboard, URL/destination dialog, live progress/speed/ETA, search, and history.
@@ -39,12 +39,15 @@ limitations, and passing supported-platform checks.
 - [x] Windows tray show/start/pause/quit, explicit hide, and optional close-to-tray.
 - [ ] Linux/macOS tray adapters, remembered window position/size, and installer.
 
-## 3. Browser integration
+## 3. Browser integration - current milestone
 
-- [ ] Chrome/Firefox extensions with explicit user-controlled capture.
-- [ ] Our own native-messaging host and documented message schema.
-- [ ] Transfer URL, referrer, and required request context into the Rust engine.
-- [ ] Capture decisions, permissions, and end-to-end browser tests.
+- [x] Chromium/Firefox development extensions with selected-link review and pasted URLs.
+- [x] Rust native messaging host with bounded framing, caller checks, and documented schema.
+- [x] Enqueue public direct-file URLs into the shared desktop/CLI queue.
+- [x] Current-user Windows/Linux setup and portable browser preview packages.
+- [x] Protocol, extension/host/CLI HTTP tests, and real Edge review/native-message smoke check.
+- [ ] Referrer/cookie/header handoff with defined persistence and permission rules.
+- [ ] Automatic interception, signed store releases, and native Firefox UI validation.
 
 ## 4. Web interface and advanced features
 

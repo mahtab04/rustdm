@@ -46,9 +46,9 @@ def check_archive(parser, archive, windows):
             parser.error("Expected one build metadata file")
         metadata = json.loads(metadata_files[0].read_text())
         application = metadata.get("application", "cli")
-        if application not in {"cli", "desktop"}:
+        if application not in {"cli", "desktop", "browser"}:
             parser.error("Unknown application in package metadata")
-        executable = "rustdm-ui" if application == "desktop" else "rustdm"
+        executable = {"cli": "rustdm", "desktop": "rustdm-ui", "browser": "rustdm-browser-host"}[application]
         filename = executable + (".exe" if windows else "")
         if metadata.get("executable", filename) != filename:
             parser.error("Unexpected executable filename in package metadata")
@@ -59,6 +59,13 @@ def check_archive(parser, archive, windows):
         if version != f"{executable} {metadata['version']}":
             parser.error("Packaged executable version mismatch")
         subprocess.run([str(binary), "--help"], check=True, stdout=subprocess.DEVNULL)
+        if application == "browser":
+            for browser in ("chromium", "firefox"):
+                manifest = binary.parent / "browser-extensions" / browser / "manifest.json"
+                if json.loads(manifest.read_text())["manifest_version"] != 3:
+                    parser.error("Missing or invalid browser extension manifest")
+            if not (binary.parent / "extensions/browser/install_host.py").is_file():
+                parser.error("Missing browser setup script")
         if application == "cli":
             subprocess.run([str(binary), "download", "--help"], check=True, stdout=subprocess.DEVNULL)
     print(f"PASS: {archive.name}: archive hash, executable hash, version, and help")

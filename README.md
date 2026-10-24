@@ -6,9 +6,10 @@ An incremental Rust download manager: CLI first, followed by desktop UI, browser
 integration, and a web interface. The shared download engine is available as a
 library so each interface uses the same behavior.
 
-**Current milestone:** desktop UI. The v0.1.0 CLI is released. A native desktop
-preview now provides a modern dashboard, download dialog, live progress,
-queue controls, live connection details, and history using the same Rust engine.
+**Current milestone:** browser integration. The v0.1.0 CLI is released, and the
+native desktop preview provides queue controls, live connection details, history,
+and Windows tray support. An initial Chromium/Firefox bridge queues reviewed
+public file links through our Rust native messaging host into the same engine.
 
 ## Features
 
@@ -34,11 +35,12 @@ queue controls, live connection details, and history using the same Rust engine.
 | [`apps/cli`](apps/cli/README.md) | `rustdm` command-line interface | Implemented |
 | [`apps/ui`](apps/ui/README.md) | Native desktop dashboard and download dialog | Preview |
 | [`apps/web`](apps/web/README.md) | Future web dashboard/API | Planned |
-| [`extensions/browser`](extensions/browser/README.md) | Future Chrome/Firefox integration | Planned |
+| [`extensions/browser`](extensions/browser/README.md) | Chromium/Firefox extensions and Rust native messaging host | Preview |
 | [`tests`](tests/README.md) | Centralized core, CLI, and future interface tests | Maintained |
 | [`docs`](docs/ARCHITECTURE.md) | Architecture and project documentation | Maintained |
 
-This is a Cargo workspace with three packages: `rustdm-core`, `rustdm`, and `rustdm-ui`.
+This Cargo workspace contains `rustdm-core`, `rustdm`, `rustdm-ui`, and
+`rustdm-browser-host`.
 All packages share the root Cargo.lock, dependency versions, and target directory.
 
 ## Build
@@ -92,6 +94,19 @@ the CLI. Extract the desktop package and launch `rustdm-ui.exe` (Windows) or
 `rustdm-ui` (Linux). The published v0.1.0 release still contains only the CLI;
 see [packaging instructions](docs/RELEASE.md) for local desktop archives.
 
+## Browser preview
+
+Build the workspace, then run `python extensions/browser/build_extension.py`.
+Load the generated extension, configure the current-user native host, and use
+**Queue link in RustDM...** to review and enqueue a direct file URL. The toolbar
+button supports pasted URLs too. The desktop must use the same state directory.
+
+See [browser installation and usage](extensions/browser/README.md) for Chrome,
+Edge, Firefox, Windows/Linux setup, and removal. This first version supports
+public HTTP/HTTPS files; cookies, referrer/header handoff, automatic interception,
+and YouTube/media assembly remain future work. Browser preview archives include
+the host, both generated extensions, setup scripts, and protocol documentation.
+
 ## Download and resume
 
 Replace the example URL with a real direct-download URL:
@@ -132,7 +147,7 @@ Servers without usable ranges/validators use one stream. Retries restart that
 stream from zero; an interrupted non-resumable download currently requires a new
 output path. Large files use multiple saved ranges per connection; free
 connections claim pending ranges as they finish. Range boundaries stay fixed for
-safe resume. Splitting an already active slow range, browser capture,
+safe resume. Splitting an already active slow range, automatic browser interception,
 FTP, and media assembly remain future work. Existing `.rustidm` partial directories are detected and
 resumed in place when there is no `.rustdm` directory for the same output.
 

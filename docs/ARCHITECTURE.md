@@ -257,3 +257,19 @@ Controls are disabled while closing, and enqueue replies cannot restart the queu
 during shutdown. Finished session handles are reaped so task panics become visible
 error events; startup failures use a native error dialog. Transfer and persistence
 semantics remain in the shared core.
+
+## Browser adapter
+
+`extensions/browser/native-host` is a separate Rust application adapter.
+`framing` owns bounded native-endian stdin/stdout messages, and `host` validates
+configuration, callers, schema, and destination basenames before composing the
+shared `DownloadQueue`. It does not launch a transfer engine or accept browser
+filesystem paths. The host only enqueues jobs, keeping the core independent of
+browser APIs and registration.
+
+The extension separates protocol validation, browser transport/session drafts,
+background link selection, and the review form. Only explicit submission reaches
+the native host. A builder generates Chromium service-worker and Firefox event
+page manifests from shared source. Setup writes per-user native manifests and
+local queue/download-directory configuration. See [protocol](BROWSER.md) and
+[browser setup](../extensions/browser/README.md) for boundaries and limitations.

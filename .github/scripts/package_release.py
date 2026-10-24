@@ -28,7 +28,7 @@ def digest(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", choices=TARGETS, required=True)
-    parser.add_argument("--app", choices=["cli", "desktop"], default="cli")
+    parser.add_argument("--app", choices=["cli", "desktop", "browser"], default="cli")
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
     parser.add_argument("--tag", default=os.environ.get("RELEASE_TAG") or None)
@@ -43,7 +43,7 @@ def main():
     if f"host: {args.target}" not in rustc.splitlines():
         parser.error("Package target must match the native Rust host")
     binary = args.binary.resolve(strict=True)
-    executable = "rustdm-ui" if args.app == "desktop" else "rustdm"
+    executable = {"cli": "rustdm", "desktop": "rustdm-ui", "browser": "rustdm-browser-host"}[args.app]
     expected_filename = executable + (".exe" if args.target.endswith("windows-msvc") else "")
     if binary.name != expected_filename:
         parser.error(f"Expected executable filename {expected_filename}")
@@ -56,7 +56,7 @@ def main():
     if not notes.is_file():
         parser.error(f"Missing release notes: {notes.relative_to(ROOT)}")
 
-    prefix = "rustdm-desktop" if args.app == "desktop" else "rustdm"
+    prefix = {"cli": "rustdm", "desktop": "rustdm-desktop", "browser": "rustdm-browser"}[args.app]
     name = f"{prefix}-v{version}-{args.target}"
     suffix = ".zip" if binary.suffix == ".exe" else ".tar.gz"
     args.output.mkdir(parents=True, exist_ok=True)
@@ -74,6 +74,16 @@ def main():
     ]
     if args.app == "desktop":
         files.append((ROOT / "apps/ui/README.md", "apps/ui/README.md"))
+    if args.app == "browser":
+        extension_output = ROOT / "dist" / "browser-extensions"
+        subprocess.run([os.sys.executable, str(ROOT / "extensions/browser/build_extension.py"), "--output", str(extension_output)], check=True)
+        files.extend((path, str(Path("browser-extensions") / path.relative_to(extension_output)))
+                     for path in sorted(extension_output.rglob("*")) if path.is_file())
+        browser_root = ROOT / "extensions/browser"
+        files.extend((browser_root / name, f"extensions/browser/{name}") for name in
+                     ("README.md", "build_extension.py", "install_host.py", "chromium-key.txt"))
+        files.extend((path, str(path.relative_to(ROOT))) for path in sorted((browser_root / "extension").iterdir()) if path.is_file())
+        files.append((ROOT / "docs/BROWSER.md", "docs/BROWSER.md"))
     if (ROOT / "LICENSE").is_file():
         files.append((ROOT / "LICENSE", "LICENSE"))
     metadata = (json.dumps({

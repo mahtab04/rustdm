@@ -2612,6 +2612,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustdm-browser-host"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rustdm-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "rustdm-core"
 version = "0.1.0"
 dependencies = [

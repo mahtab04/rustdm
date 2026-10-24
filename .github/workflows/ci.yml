@@ -21,10 +21,12 @@ jobs:
             target: x86_64-unknown-linux-gnu
             binary: rustdm
             desktop_binary: rustdm-ui
+            native_binary: rustdm-browser-host
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             binary: rustdm.exe
             desktop_binary: rustdm-ui.exe
+            native_binary: rustdm-browser-host.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -47,6 +49,16 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Browser setup tests
+        run: python -m unittest discover -s tests/browser -p "test_*.py"
+      - name: Extension and native bridge integration
+        env:
+          RUSTDM_NATIVE_HOST: ${{ github.workspace }}/target/release/${{ matrix.native_binary }}
+          RUSTDM_CLI: ${{ github.workspace }}/target/release/${{ matrix.binary }}
+        run: node --test tests/browser/extension.test.mjs
       - name: Package and check executable version
         env:
           RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
@@ -62,6 +74,14 @@ jobs:
           --app desktop
           --target ${{ matrix.target }}
           --binary target/release/${{ matrix.desktop_binary }}
+      - name: Package browser bridge
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: >-
+          python .github/scripts/package_release.py
+          --app browser
+          --target ${{ matrix.target }}
+          --binary target/release/${{ matrix.native_binary }}
       - name: Check packaged executable
         shell: bash
         run: python .github/scripts/check_package.py dist
@@ -69,6 +89,9 @@ jobs:
         if: github.event_name != 'pull_request'
         with:
           name: rustdm-${{ matrix.target }}
-          path: dist/*
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.sha256
           if-no-files-found: error
           retention-days: 14

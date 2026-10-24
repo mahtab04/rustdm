@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Queue a file in RustDM</title><link rel="stylesheet" href="style.css"></head>
+<body><main>
+  <p class="brand">&#8595; RustDM</p><h1>Queue a file</h1>
+  <p>Review the link and filename before sending it to RustDM.</p>
+  <form id="download">
+    <label for="url">Direct file URL</label><input id="url" type="url" placeholder="https://example.com/file.zip" required autofocus>
+    <label for="filename">Save as filename</label><input id="filename" placeholder="file.zip" required>
+    <p class="hint">Saved in the folder chosen during browser setup. Public HTTP/HTTPS files only; browser cookies are not sent.</p>
+    <button id="submit" type="submit">Add to RustDM queue</button>
+  </form>
+  <p id="status" role="status" aria-live="polite"></p>
+  <p class="hint">Queued files download when the RustDM queue runs, including if it is already running.</p>
+</main><script type="module" src="confirm.js"></script></body></html>
