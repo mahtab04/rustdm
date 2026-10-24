@@ -53,6 +53,10 @@ pub struct QueueJob {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) sha256: Option<Sha256Checksum>,
     pub(crate) state: JobState,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) held: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) removed: bool,
     pub(crate) created_at: u64,
     pub(crate) updated_at: u64,
     pub(crate) attempts: Vec<Attempt>,
@@ -70,6 +74,10 @@ impl QueueJob {
     }
     pub fn state(&self) -> JobState {
         self.state
+    }
+    /// Explicitly paused jobs are skipped by automatic queue execution.
+    pub fn is_held(&self) -> bool {
+        self.held
     }
     pub fn bandwidth_limit(&self) -> Option<u64> {
         self.bandwidth_limit

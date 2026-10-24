@@ -28,8 +28,8 @@ These portable preview packages are not a new published release or an installer.
 4. Choose **Add to queue** or **Download now**. Download now starts the queue,
    including any jobs already ahead of the new download.
 5. **Pause queue** saves the active partial download and stops later jobs.
-   **Start queue** continues pending/paused jobs. **Retry** requeues a failed job;
-   start the queue to execute it. **History** shows errors and terminal attempts.
+   **Start queue** continues eligible pending/paused jobs, skipping individually
+   held downloads. **History** shows errors and terminal attempts.
 
 Jobs execute sequentially; each job uses parallel range connections. Pause/resume
 has the same server-validator requirements as the CLI. A checksum mismatch keeps
@@ -40,6 +40,33 @@ closing. If a native file picker is open, close it to finish quitting. Controls
 are disabled during shutdown. Unexpected download-task failures appear in the
 dashboard, and startup failures show a native error dialog.
 Partial files are retained beside the destination.
+
+## Download context menu
+
+Right-click anywhere on a download card, or click its **...** button:
+
+- **Start download / Resume download / Retry download** runs only that selected
+  file. The queue must be idle; pause the running queue before selecting another
+  download. Other queued jobs remain waiting.
+- **Pause download** holds a waiting file or cancels its active transfer. When
+  running the whole queue, later eligible jobs continue. Individually paused jobs
+  stay held across restarts and are skipped by Start queue until explicitly
+  resumed. Pause queue still stops the whole execution session.
+- **Copy download URL / Copy file path** copies the selected value.
+- **Remove from list** hides the job while keeping its files, partial data, and
+  attempt history. It does not delete data from disk.
+- **Delete files...** opens a confirmation naming the full destination. After
+  confirmation it deletes the completed file or verified partial data and removes
+  the row. History is retained. Pause an active file before removing or deleting.
+
+Partial deletion checks the source manifest, directory location, writer lock,
+and all filenames before removing data. Unrecognized files and symlinks are
+preserved with an error. Empty partial directories and their lock files remain
+so competing writers cannot bypass the lock; they contain no downloaded bytes.
+If the destination exists for a job that never completed, it is preserved.
+
+Refresh and Start/Pause queue use consistent heights, padding, and rounded styles.
+Closing the app waits for pending job actions as well as download cancellation.
 
 ## Windows system tray
 

@@ -3,7 +3,9 @@ use crate::{
     checksum::ChecksumVerifier,
     domain::{DownloadOptions, MAX_SEGMENTS, Remote, Segment, Validator},
 };
+mod cleanup;
 use anyhow::{Context, Result, ensure};
+pub(crate) use cleanup::discard_partial;
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::{

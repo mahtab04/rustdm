@@ -273,3 +273,19 @@ the native host. A builder generates Chromium service-worker and Firefox event
 page manifests from shared source. Setup writes per-user native manifests and
 local queue/download-directory configuration. See [protocol](BROWSER.md) and
 [browser setup](../extensions/browser/README.md) for boundaries and limitations.
+
+## Per-download actions
+
+A queue runner owns a shared active-job cancellation slot and its session lock.
+`QueueControl` holds a weak reference to that lock: it cannot control a replacement
+runner. Claim, hold/cancel, and finish synchronize through the active slot before
+short queue transactions. Each download gets a child token, allowing individual
+pause without cancelling the session. Persisted holds prevent automatic reclaim;
+selected execution explicitly releases the hold and runs one job.
+
+The desktop backend runs job mutations on blocking workers and emits completion
+replies. The app drains these before shutdown. Context-menu rendering and delete
+confirmation live in `apps/ui/src/app/job_menu.rs`; filesystem ownership and
+mutation rules stay in the core. Queue removal archives rows to preserve history.
+`state/cleanup.rs` verifies sidecar ownership and regular files, then deletes only
+recognized files under the existing writer lock, with no recursive traversal.

@@ -8,7 +8,7 @@ component they exercise.
 | `core/checksum.rs` | Digest validation, serialization, and known SHA-256 vectors |
 | `core/segments.rs` | Bounded range planning, full byte coverage, and large-file boundaries |
 | `core/metrics.rs` | Transfer speed and ETA calculations |
-| `core/queue/` | Queue persistence, locking, recovery, and history |
+| `core/queue/` | Queue persistence, holds, archival/history, file-deletion ownership/locking, recovery, and history |
 | `cli/args.rs` | Argument parsing, rate validation, and command compatibility |
 | `cli/downloads.rs` | HTTP transfers, connection telemetry/retry/resume accounting, dynamic scheduling/resume, validator interoperability, checksum/publication safety, aggregate pacing, cancellation/resume, queue execution, and CLI subprocesses |
 | `ui/` | Desktop form validation, filtering, background HTTP execution, queue/worker errors, preferences round-trip/corruption safety, and hidden tray command/HTTP/shutdown handling |

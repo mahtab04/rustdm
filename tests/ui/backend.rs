@@ -28,15 +28,14 @@ fn desktop_backend_surfaces_panics_instead_of_silently_losing_the_worker() {
     ));
 }
 
-#[test]
-fn desktop_backend_downloads_through_the_persistent_queue_and_reports_completion() {
+fn http_fixture(expected_requests: usize) -> (String, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let url = format!("http://{}/file", listener.local_addr().unwrap());
     let peer = thread::spawn(move || {
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut requests = 0;
-        while requests < 4 && Instant::now() < deadline {
+        while requests < expected_requests && Instant::now() < deadline {
             let (mut stream, _) = match listener.accept() {
                 Ok(value) => value,
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -59,8 +58,14 @@ fn desktop_backend_downloads_through_the_persistent_queue_and_reports_completion
                 .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\nConnection: close\r\n\r\nabc");
             requests += 1;
         }
-        assert_eq!(requests, 4);
+        assert_eq!(requests, expected_requests);
     });
+    (url, peer)
+}
+
+#[test]
+fn desktop_backend_downloads_through_the_persistent_queue_and_reports_completion() {
+    let (url, peer) = http_fixture(4);
     let temp = tempfile::tempdir().unwrap();
     let output = temp.path().join("desktop.bin");
     let mut backend = Backend::new(temp.path().join("jobs"), egui::Context::default()).unwrap();
@@ -130,4 +135,39 @@ fn desktop_backend_returns_queue_errors_as_events_without_creating_jobs() {
         Event::Added(Err(_))
     ));
     assert!(backend.queue.jobs().unwrap().is_empty());
+}
+
+#[test]
+fn desktop_backend_starts_only_the_selected_download() {
+    let (url, peer) = http_fixture(2);
+    let temporary = tempfile::tempdir().unwrap();
+    let mut backend =
+        Backend::new(temporary.path().join("queue"), egui::Context::default()).unwrap();
+    let first = temporary.path().join("first.bin");
+    let selected = temporary.path().join("selected.bin");
+    backend
+        .queue
+        .enqueue(DownloadOptions::new(&url, &first))
+        .unwrap();
+    let id = backend
+        .queue
+        .enqueue(DownloadOptions::new(&url, &selected))
+        .unwrap();
+    backend.start_job(id);
+    loop {
+        if let Event::Stopped(result) = backend
+            .events
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
+        {
+            assert_eq!(result.unwrap().completed, 1);
+            break;
+        }
+    }
+    assert!(!first.exists());
+    assert_eq!(std::fs::read(selected).unwrap(), b"abc");
+    let jobs = backend.queue.jobs().unwrap();
+    assert_eq!(jobs[0].state(), rustdm_core::JobState::Pending);
+    assert_eq!(jobs[1].state(), rustdm_core::JobState::Completed);
+    peer.join().unwrap();
 }

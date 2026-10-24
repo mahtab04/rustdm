@@ -2,6 +2,213 @@ use super::*;
 use rustdm_core::DownloadQueue;
 
 #[test]
+fn right_click_delete_opens_confirmation_before_deleting_the_selected_row() {
+    fn frame(
+        app: &mut DesktopApp,
+        ctx: &egui::Context,
+        events: Vec<egui::Event>,
+    ) -> egui::FullOutput {
+        ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    Vec2::new(1180.0, 780.0),
+                )),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                app.background_logic(ui.ctx());
+                app.dashboard(ui);
+                app.delete_dialog(ui.ctx());
+            },
+        )
+    }
+    fn point(output: &egui::FullOutput, label: &str) -> egui::Pos2 {
+        output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::epaint::Shape::Text(text) if text.galley.text() == label => {
+                    Some(text.pos + text.galley.size() / 2.0)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("Missing UI label: {label}"))
+    }
+    fn click(
+        app: &mut DesktopApp,
+        ctx: &egui::Context,
+        position: egui::Pos2,
+        button: egui::PointerButton,
+    ) {
+        for pressed in [true, false] {
+            frame(
+                app,
+                ctx,
+                vec![
+                    egui::Event::PointerMoved(position),
+                    egui::Event::PointerButton {
+                        pos: position,
+                        button,
+                        pressed,
+                        modifiers: Default::default(),
+                    },
+                ],
+            )
+            .drop_without_applying_deltas();
+        }
+    }
+    let temporary = tempfile::tempdir().unwrap();
+    let state = temporary.path().join("queue");
+    let queue = DownloadQueue::open(&state).unwrap();
+    queue
+        .enqueue(rustdm_core::DownloadOptions::new(
+            "https://example.test/file",
+            temporary.path().join("file.bin"),
+        ))
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = DesktopApp::from_context(&ctx, state).unwrap();
+    app.jobs = queue.jobs().unwrap();
+    frame(&mut app, &ctx, vec![]).drop_without_applying_deltas();
+    let output = frame(&mut app, &ctx, vec![]);
+    let card = point(&output, "file.bin");
+    output.drop_without_applying_deltas();
+    click(&mut app, &ctx, card, egui::PointerButton::Secondary);
+    frame(&mut app, &ctx, vec![]).drop_without_applying_deltas();
+    let output = frame(&mut app, &ctx, vec![]);
+    let delete = point(&output, "Delete files...");
+    output.drop_without_applying_deltas();
+    click(&mut app, &ctx, delete, egui::PointerButton::Primary);
+    assert!(
+        app.pending_delete.is_some(),
+        "Context menu must request confirmation"
+    );
+    assert_eq!(queue.jobs().unwrap().len(), 1);
+    frame(&mut app, &ctx, vec![]).drop_without_applying_deltas();
+    let output = frame(&mut app, &ctx, vec![]);
+    let confirm = point(&output, "Delete files");
+    output.drop_without_applying_deltas();
+    click(&mut app, &ctx, confirm, egui::PointerButton::Primary);
+    assert!(app.pending_delete.is_none());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !app.mutating.is_empty() && Instant::now() < deadline {
+        app.poll();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(queue.jobs().unwrap().is_empty());
+}
+
+#[test]
+fn delete_confirmation_requires_a_button_click_then_dispatches_the_mutation() {
+    for label in ["Cancel", "Delete files"] {
+        let temporary = tempfile::tempdir().unwrap();
+        let state = temporary.path().join("queue");
+        let queue = DownloadQueue::open(&state).unwrap();
+        let id = queue
+            .enqueue(rustdm_core::DownloadOptions::new(
+                "https://example.test/file",
+                temporary.path().join("file.bin"),
+            ))
+            .unwrap();
+        let ctx = egui::Context::default();
+        let mut app = DesktopApp::from_context(&ctx, state).unwrap();
+        app.pending_delete = Some(queue.jobs().unwrap().remove(0));
+        app.delete_ready = true;
+        let draw = |app: &mut DesktopApp, events: Vec<egui::Event>| {
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        Vec2::new(1180.0, 780.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| app.delete_dialog(ui.ctx()),
+            )
+        };
+        draw(&mut app, vec![]).drop_without_applying_deltas();
+        let output = draw(&mut app, vec![]);
+        let point = output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::epaint::Shape::Text(text) if text.galley.text() == label => {
+                    Some(text.pos + text.galley.size() / 2.0)
+                }
+                _ => None,
+            })
+            .expect("Confirmation must show the Delete files button");
+        output.drop_without_applying_deltas();
+        assert_eq!(
+            queue.jobs().unwrap().len(),
+            1,
+            "Showing confirmation cannot delete a job"
+        );
+        draw(
+            &mut app,
+            vec![
+                egui::Event::PointerMoved(point),
+                egui::Event::PointerButton {
+                    pos: point,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Default::default(),
+                },
+            ],
+        )
+        .drop_without_applying_deltas();
+        draw(
+            &mut app,
+            vec![egui::Event::PointerButton {
+                pos: point,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: Default::default(),
+            }],
+        )
+        .drop_without_applying_deltas();
+        assert!(app.pending_delete.is_none());
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while app.mutating.contains(&id) && Instant::now() < deadline {
+            app.poll();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(
+            queue.jobs().unwrap().len(),
+            if label == "Cancel" { 1 } else { 0 }
+        );
+    }
+}
+
+#[test]
+fn closing_waits_for_a_pending_job_mutation_and_handles_its_reply() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = temporary.path().join("queue");
+    let queue = DownloadQueue::open(&state).unwrap();
+    let id = queue
+        .enqueue(rustdm_core::DownloadOptions::new(
+            "https://example.test/file",
+            temporary.path().join("file.bin"),
+        ))
+        .unwrap();
+    let mut app = DesktopApp::from_context(&egui::Context::default(), state).unwrap();
+    app.mutating.insert(id);
+    app.backend.job_action(id, JobAction::Remove);
+    app.begin_close();
+    assert!(app.busy(), "Shutdown must drain the pending mutation reply");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while app.busy() && Instant::now() < deadline {
+        app.poll();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(!app.busy());
+    assert!(queue.jobs().unwrap().is_empty());
+}
+
+#[test]
 fn queue_can_start_pause_and_quit_using_only_hidden_logic() {
     use std::{
         io::{Read, Write},

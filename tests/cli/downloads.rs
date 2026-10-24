@@ -14,6 +14,98 @@ use std::{
     time::Duration,
 };
 
+#[tokio::test]
+async fn starting_a_selected_download_leaves_earlier_and_later_jobs_waiting() {
+    let server = Server::new(0);
+    let temp = tempfile::tempdir().unwrap();
+    let queue = DownloadQueue::open(temp.path().join("queue")).unwrap();
+    let first = temp.path().join("first.bin");
+    let selected = temp.path().join("selected.bin");
+    let last = temp.path().join("last.bin");
+    queue.enqueue(server.options(&first)).unwrap();
+    let id = queue.enqueue(server.options(&selected)).unwrap();
+    queue.enqueue(server.options(&last)).unwrap();
+    queue.pause(id).unwrap();
+    let mut runner = queue.runner().unwrap();
+    let summary = runner
+        .run_job(id, CancellationToken::new(), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(summary.completed, 1);
+    assert_eq!(fs::read(selected).unwrap(), *server.data);
+    assert!(!first.exists() && !last.exists());
+    let jobs = queue.jobs().unwrap();
+    assert_eq!(jobs[0].state(), JobState::Pending);
+    assert_eq!(jobs[1].state(), JobState::Completed);
+    assert_eq!(jobs[2].state(), JobState::Pending);
+}
+
+#[tokio::test]
+async fn pausing_one_download_holds_it_while_the_queue_continues_and_selected_resume_is_exact() {
+    let server = Server::new(0);
+    server.slow.store(true, Ordering::SeqCst);
+    let temp = tempfile::tempdir().unwrap();
+    let queue = DownloadQueue::open(temp.path().join("queue")).unwrap();
+    let first = temp.path().join("paused.bin");
+    let second = temp.path().join("continues.bin");
+    let id = queue.enqueue(server.options(&first)).unwrap();
+    queue.enqueue(server.options(&second)).unwrap();
+    let mut runner = queue.runner().unwrap();
+    let control = runner.control();
+    let paused = Arc::new(AtomicBool::new(false));
+    let once = paused.clone();
+    let slow = server.slow.clone();
+    let summary = runner
+        .run(CancellationToken::new(), move |event| match event {
+            QueueEvent::Progress { job_id, progress }
+                if job_id == id && progress.downloaded > 0 =>
+            {
+                if !once.swap(true, Ordering::SeqCst) {
+                    control.pause(id).unwrap();
+                }
+            }
+            QueueEvent::Finished { job_id, .. } if job_id == id => {
+                slow.store(false, Ordering::SeqCst);
+            }
+            _ => {}
+        })
+        .await
+        .unwrap();
+    assert!(paused.load(Ordering::SeqCst));
+    assert_eq!(summary.paused, 1);
+    assert_eq!(summary.completed, 1);
+    assert!(
+        !summary.cancelled,
+        "An individual pause must not cancel the queue"
+    );
+    assert!(!first.exists());
+    assert_eq!(fs::read(second).unwrap(), *server.data);
+    assert!(queue.jobs().unwrap()[0].is_held());
+    assert_eq!(
+        runner
+            .run(CancellationToken::new(), |_| {})
+            .await
+            .unwrap()
+            .completed,
+        0
+    );
+    let resumed = runner
+        .run_job(id, CancellationToken::new(), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(resumed.completed, 1);
+    assert_eq!(fs::read(first).unwrap(), *server.data);
+    assert_eq!(
+        queue
+            .history()
+            .unwrap()
+            .iter()
+            .filter(|entry| entry.job_id == id)
+            .count(),
+        2
+    );
+}
+
 #[derive(Clone, Debug)]
 struct Request {
     range: Option<(u64, u64)>,

@@ -2,7 +2,7 @@
 
 The shared `DownloadQueue` stores jobs and finished attempts. `QueueRunner`
 executes pending/paused jobs in order through the existing `DownloadManager`.
-The CLI, future UI, and web adapter can use these same application services.
+The CLI, desktop, browser, and future web adapter use these same services.
 
 ## Commands
 
@@ -59,7 +59,7 @@ mean the job passed verification.
 | Running | Download failure | Failed; error saved; later jobs continue |
 | Running | Ctrl+C | Paused; later jobs stay pending |
 | Running after an abandoned session | Next runner acquires the exclusive lock | Prior attempt recorded as paused |
-| Paused | `queue run` | New running attempt; validated partial reuse |
+| Paused, not individually held | `queue run` | New running attempt; validated partial reuse |
 | Failed or paused | `queue retry ID` | Pending; prior attempt history retained |
 | Completed | Any later `queue run` | Skipped; destination preserved |
 
@@ -106,4 +106,36 @@ Headers and URL userinfo are rejected at enqueue time. The initial queued-reques
 model supports GET downloads without persisted browser credentials. Direct
 downloads still support `-H` headers and are not recorded in queue history.
 Queue snapshots do contain source URLs and query parameters. There is no job
-editing, pruning, scheduling, or parallel-job execution in this milestone.
+editing, history pruning, scheduling, or parallel-job execution in this milestone.
+
+## Individual controls and removal
+
+`QueueRunner::run_job(id, cancel, observer)` executes only the selected pending,
+paused, or failed job. Explicit selection releases its individual hold; it does
+not run earlier/later jobs. A runner still holds the exclusive execution lock.
+`QueueRunner::control()` returns a session-scoped `QueueControl`; its `pause(id)`
+persists an individual hold and cancels only that job's child token. Automatic
+queue execution continues with later eligible jobs. `DownloadQueue::pause(id)`
+can hold waiting jobs but refuses to cancel a running job without its controller.
+A controller expires when its owning runner is dropped. Global cancellation
+continues to pause the queue and leaves unheld jobs eligible on the next run.
+
+`DownloadQueue::remove(id)` archives a stopped job from `jobs()` while retaining
+its attempts for `history()` and leaving disk data untouched. IDs are not reused.
+`delete_files(id)` deletes a completed regular file or verifies/deletes only a
+stopped job's owned partial data before archiving the row. Running jobs and
+outputs also used by another visible job are rejected. Unknown sidecar contents,
+symlinks, foreign manifests, and active writer locks cause an error before data
+removal. There is no recursive directory deletion. Empty sidecar/lock metadata
+is retained. An unfinished job cannot delete an existing destination.
+
+File deletion and queue snapshot publication are separate filesystem operations;
+a disk error after deleting files can leave a row present. The error is reported
+and removal can be retried; deleted file data cannot be rolled back. Desktop
+Delete therefore requires explicit confirmation, while Remove preserves files.
+
+Optional version-1 fields `held` and `removed` default to false and are omitted
+when false. Existing queue files load normally. Older RustDM binaries that deny
+unknown fields will refuse snapshots containing these flags; use the updated
+CLI/desktop/browser host together instead of opening such queues in the published v0.1.0 CLI.
+The CLI's existing `queue retry ID` releases a paused job's hold before queue run.

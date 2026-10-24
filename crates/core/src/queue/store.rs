@@ -69,6 +69,7 @@ impl Document {
                 }
             }
             if job.state == JobState::Running {
+                ensure!(!job.removed, "A removed job cannot be running");
                 running += 1;
                 ensure!(
                     job.attempts
@@ -192,7 +193,7 @@ impl DownloadQueue {
             "Queued output already exists or has no filename"
         );
         self.transact(|document| {
-            ensure!(!document.jobs.iter().any(|job| job.output == output && job.state != JobState::Completed),
+            ensure!(!document.jobs.iter().any(|job| !job.removed && job.output == output && job.state != JobState::Completed),
                 "An unfinished job already uses this output; retry that job or choose another filename");
             let id = document.next_id;
             document.next_id = id.checked_add(1).context("Queue ID limit reached")?;
@@ -207,6 +208,8 @@ impl DownloadQueue {
                 bandwidth_limit: options.bandwidth_limit,
                 sha256: options.sha256,
                 state: JobState::Pending,
+                held: false,
+                removed: false,
                 created_at: now,
                 updated_at: now,
                 attempts: Vec::new(),
@@ -216,6 +219,14 @@ impl DownloadQueue {
     }
 
     pub fn jobs(&self) -> Result<Vec<QueueJob>> {
+        Ok(self
+            .all_jobs()?
+            .into_iter()
+            .filter(|job| !job.removed)
+            .collect())
+    }
+
+    fn all_jobs(&self) -> Result<Vec<QueueJob>> {
         let lock = self.lock("queue.lock")?;
         FileExt::lock_exclusive(&lock)?;
         Ok(self.read()?.jobs)
@@ -223,7 +234,7 @@ impl DownloadQueue {
 
     pub fn history(&self) -> Result<Vec<HistoryEntry>> {
         let mut history = Vec::new();
-        for job in self.jobs()? {
+        for job in self.all_jobs()? {
             for (index, attempt) in job.attempts.iter().enumerate() {
                 if let Some(finished_at) = attempt.finished_at {
                     history.push(HistoryEntry {
@@ -251,11 +262,13 @@ impl DownloadQueue {
         self.recover_interrupted()?;
         self.transact(|document| {
             let job = document.job_mut(id)?;
+            ensure!(!job.removed, "Job was removed");
             ensure!(
                 matches!(job.state, JobState::Failed | JobState::Paused),
                 "Only failed or paused jobs can be retried"
             );
             job.state = JobState::Pending;
+            job.held = false;
             job.updated_at = timestamp()?;
             Ok(())
         })
@@ -283,16 +296,36 @@ impl DownloadQueue {
     }
 
     pub(crate) fn claim_next(&self) -> Result<Option<QueueJob>> {
+        self.claim(None)
+    }
+
+    pub(crate) fn claim(&self, selected: Option<u64>) -> Result<Option<QueueJob>> {
         self.transact(|document| {
-            let Some(job) = document
-                .jobs
-                .iter_mut()
-                .find(|job| matches!(job.state, JobState::Pending | JobState::Paused))
-            else {
+            if let Some(id) = selected {
+                let job = document.job_mut(id)?;
+                ensure!(
+                    !job.removed
+                        && matches!(
+                            job.state,
+                            JobState::Pending | JobState::Paused | JobState::Failed
+                        ),
+                    "Selected job cannot be started"
+                );
+            }
+            let Some(job) = document.jobs.iter_mut().find(|job| {
+                !job.removed
+                    && match selected {
+                        Some(id) => job.id == id,
+                        None => {
+                            !job.held && matches!(job.state, JobState::Pending | JobState::Paused)
+                        }
+                    }
+            }) else {
                 return Ok(None);
             };
             let now = timestamp()?;
             job.state = JobState::Running;
+            job.held = false;
             job.updated_at = now;
             job.attempts.push(Attempt {
                 started_at: now,
@@ -334,7 +367,93 @@ impl DownloadQueue {
             attempt.resumed_bytes = summary.map(|summary| summary.resumed_bytes);
             attempt.error = error;
             job.state = state;
+            if state == JobState::Completed {
+                job.held = false;
+            }
             job.updated_at = now;
+            Ok(())
+        })
+    }
+
+    /// Hold a waiting job without stopping any other transfer.
+    pub fn pause(&self, id: u64) -> Result<()> {
+        self.hold(id, false)
+    }
+
+    pub(crate) fn hold(&self, id: u64, active: bool) -> Result<()> {
+        self.transact(|document| {
+            let job = document.job_mut(id)?;
+            ensure!(
+                !job.removed
+                    && (matches!(job.state, JobState::Pending | JobState::Paused)
+                        || (active && job.state == JobState::Running)),
+                "Job cannot be paused by this controller"
+            );
+            job.held = true;
+            if job.state == JobState::Pending {
+                job.state = JobState::Paused;
+            }
+            job.updated_at = timestamp()?;
+            Ok(())
+        })
+    }
+
+    /// Remove a stopped job from the visible queue, retaining files and attempt history.
+    pub fn remove(&self, id: u64) -> Result<()> {
+        self.transact(|document| {
+            let job = document.job_mut(id)?;
+            ensure!(
+                job.state != JobState::Running,
+                "Pause the download before removing it"
+            );
+            job.removed = true;
+            job.updated_at = timestamp()?;
+            Ok(())
+        })
+    }
+
+    /// Delete a stopped job's completed file or verified partial data, then remove its row.
+    pub fn delete_files(&self, id: u64) -> Result<()> {
+        self.transact(|document| {
+            let job = document
+                .jobs
+                .iter()
+                .find(|job| job.id == id && !job.removed)
+                .context("Job was not found")?;
+            ensure!(
+                job.state != JobState::Running,
+                "Pause the download before deleting files"
+            );
+            ensure!(
+                !document
+                    .jobs
+                    .iter()
+                    .any(|other| other.id != id && !other.removed && other.output == job.output),
+                "Another queue job uses this destination"
+            );
+            if job.state == JobState::Completed {
+                match fs::symlink_metadata(&job.output) {
+                    Ok(metadata) => {
+                        ensure!(
+                            metadata.is_file() && !metadata.file_type().is_symlink(),
+                            "Destination is not a regular file"
+                        );
+                        fs::remove_file(&job.output).context("Cannot delete downloaded file")?;
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error.into()),
+                }
+            } else {
+                ensure!(
+                    fs::symlink_metadata(&job.output)
+                        .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound),
+                    "An unfinished job does not own the existing destination; it was preserved"
+                );
+                crate::state::discard_partial(&job.output, &job.url)?;
+            }
+            let job = document.job_mut(id)?;
+            job.removed = true;
+            job.updated_at = timestamp()?;
             Ok(())
         })
     }

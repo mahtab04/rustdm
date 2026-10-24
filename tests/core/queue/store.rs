@@ -7,6 +7,147 @@ fn options(output: impl Into<std::path::PathBuf>) -> DownloadOptions {
 }
 
 #[test]
+fn individual_holds_persist_and_selected_claims_skip_other_jobs() {
+    let temp = tempfile::tempdir().unwrap();
+    let queue = DownloadQueue::open(temp.path().join("queue")).unwrap();
+    let first = queue.enqueue(options(temp.path().join("first"))).unwrap();
+    let second = queue.enqueue(options(temp.path().join("second"))).unwrap();
+    queue.pause(first).unwrap();
+    let reopened = DownloadQueue::open(queue.directory()).unwrap();
+    assert!(reopened.jobs().unwrap()[0].is_held());
+    assert_eq!(reopened.jobs().unwrap()[0].state(), JobState::Paused);
+    let runner = reopened.runner().unwrap();
+    assert_eq!(reopened.claim_next().unwrap().unwrap().id(), second);
+    assert!(queue.remove(second).is_err());
+    assert!(queue.delete_files(second).is_err());
+    reopened
+        .finish(second, JobState::Failed, None, Some("test".into()))
+        .unwrap();
+    assert!(reopened.claim_next().unwrap().is_none());
+    let selected = reopened.claim(Some(first)).unwrap().unwrap();
+    assert_eq!(selected.id(), first);
+    assert!(!selected.is_held());
+    assert!(
+        queue.pause(first).is_err(),
+        "A store cannot cancel another session's active job"
+    );
+    runner.control().pause(first).unwrap_err(); // claim was made outside the controlled execution path
+    drop(runner);
+}
+
+#[test]
+fn removing_a_job_keeps_files_and_history_and_never_reuses_its_id() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("kept.bin");
+    let queue = DownloadQueue::open(temp.path().join("queue")).unwrap();
+    let id = queue.enqueue(options(&output)).unwrap();
+    let _runner = queue.runner().unwrap();
+    queue.claim_next().unwrap();
+    fs::write(&output, b"keep this file").unwrap();
+    queue.finish(id, JobState::Completed, None, None).unwrap();
+    queue.remove(id).unwrap();
+    assert!(queue.jobs().unwrap().is_empty());
+    assert_eq!(queue.history().unwrap()[0].job_id, id);
+    assert_eq!(fs::read(&output).unwrap(), b"keep this file");
+    assert!(queue.enqueue(options(temp.path().join("next"))).unwrap() > id);
+}
+
+fn partial_fixture(output: &std::path::Path, url: &str) -> std::path::PathBuf {
+    let directory = crate::state_directory(output);
+    fs::create_dir_all(&directory).unwrap();
+    fs::write(directory.join("manifest.json"), serde_json::to_vec(&serde_json::json!({
+        "version":1,"url":url,"final_url":url,"size":3,"validator":null,"segmented":false,"segments":[]
+    })).unwrap()).unwrap();
+    fs::write(directory.join("part-000"), b"abc").unwrap();
+    directory
+}
+
+#[test]
+fn deleting_partial_data_requires_owned_regular_files_and_an_exclusive_writer_lock() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("partial.bin");
+    let queue = DownloadQueue::open(temp.path().join("queue")).unwrap();
+    let id = queue.enqueue(options(&output)).unwrap();
+    let directory = partial_fixture(&output, "https://example.test/archive.zip");
+    fs::write(directory.join("unrelated.txt"), b"preserve").unwrap();
+    assert!(queue.delete_files(id).is_err());
+    assert_eq!(fs::read(directory.join("part-000")).unwrap(), b"abc");
+    assert!(directory.join("manifest.json").exists());
+    assert_eq!(
+        fs::read(directory.join("unrelated.txt")).unwrap(),
+        b"preserve"
+    );
+    fs::remove_file(directory.join("unrelated.txt")).unwrap();
+    let writer = crate::state::DownloadState::acquire(&output, true).unwrap();
+    assert!(queue.delete_files(id).is_err());
+    drop(writer);
+    queue.delete_files(id).unwrap();
+    assert!(queue.jobs().unwrap().is_empty());
+    assert!(!directory.join("part-000").exists());
+    assert!(!directory.join("manifest.json").exists());
+    assert!(directory.join("lock").exists());
+}
+
+#[test]
+fn deleting_a_completed_file_retains_history_and_unfinished_jobs_preserve_existing_destinations() {
+    let temp = tempfile::tempdir().unwrap();
+    let queue = DownloadQueue::open(temp.path().join("queue")).unwrap();
+    let completed = temp.path().join("completed.bin");
+    let id = queue.enqueue(options(&completed)).unwrap();
+    let _runner = queue.runner().unwrap();
+    queue.claim_next().unwrap();
+    fs::write(&completed, b"complete").unwrap();
+    queue.finish(id, JobState::Completed, None, None).unwrap();
+    queue.delete_files(id).unwrap();
+    assert!(!completed.exists());
+    assert_eq!(queue.history().unwrap().len(), 1);
+    let pending = temp.path().join("pending.bin");
+    let next = queue.enqueue(options(&pending)).unwrap();
+    fs::write(&pending, b"someone else's file").unwrap();
+    assert!(queue.delete_files(next).is_err());
+    assert_eq!(fs::read(pending).unwrap(), b"someone else's file");
+    assert_eq!(queue.jobs().unwrap().len(), 1);
+}
+
+#[test]
+fn mismatched_partial_sources_are_preserved_and_old_controllers_expire() {
+    let temp = tempfile::tempdir().unwrap();
+    let queue = DownloadQueue::open(temp.path().join("queue")).unwrap();
+    let output = temp.path().join("partial.bin");
+    let id = queue.enqueue(options(&output)).unwrap();
+    let directory = partial_fixture(&output, "https://other.test/file");
+    assert!(queue.delete_files(id).is_err());
+    assert!(directory.join("part-000").exists());
+    let runner = queue.runner().unwrap();
+    let controller = runner.control();
+    drop(runner);
+    assert!(controller.pause(id).is_err());
+    assert!(!queue.jobs().unwrap()[0].is_held());
+}
+
+#[cfg(unix)]
+#[test]
+fn deleting_partial_data_refuses_symlinked_directories_and_parts() {
+    use std::os::unix::fs::symlink;
+    let temp = tempfile::tempdir().unwrap();
+    let queue = DownloadQueue::open(temp.path().join("queue")).unwrap();
+    let output = temp.path().join("partial.bin");
+    let id = queue.enqueue(options(&output)).unwrap();
+    let foreign = temp.path().join("foreign");
+    fs::create_dir(&foreign).unwrap();
+    fs::write(foreign.join("valuable"), b"keep").unwrap();
+    symlink(&foreign, crate::state_directory(&output)).unwrap();
+    assert!(queue.delete_files(id).is_err());
+    assert_eq!(fs::read(foreign.join("valuable")).unwrap(), b"keep");
+    fs::remove_file(crate::state_directory(&output)).unwrap();
+    let directory = partial_fixture(&output, "https://example.test/archive.zip");
+    fs::remove_file(directory.join("part-000")).unwrap();
+    symlink(foreign.join("valuable"), directory.join("part-000")).unwrap();
+    assert!(queue.delete_files(id).is_err());
+    assert_eq!(fs::read(foreign.join("valuable")).unwrap(), b"keep");
+}
+
+#[test]
 fn jobs_persist_with_stable_ids_and_absolute_output_paths() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("jobs");

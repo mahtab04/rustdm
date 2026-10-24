@@ -19,7 +19,8 @@ pub use domain::{DownloadOptions, DownloadSummary, Progress, ProgressObserver};
 pub use manager::DownloadManager;
 pub use metrics::{ProgressMeter, TransferMetrics};
 pub use queue::{
-    DownloadQueue, HistoryEntry, JobState, QueueEvent, QueueJob, QueueRunSummary, QueueRunner,
+    DownloadQueue, HistoryEntry, JobState, QueueControl, QueueEvent, QueueJob, QueueRunSummary,
+    QueueRunner,
 };
 pub use state::state_directory;
 pub use tokio_util::sync::CancellationToken;

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Download context menu and queue controls
+
+- Unified Refresh and Start/Pause queue button heights, padding, and styling.
+- Added right-click and per-card menus for selected start/resume/retry, individual
+  pause, copying URL/path, removing a row, and confirmed file deletion.
+- Added persistent individual holds and session-scoped cancellation so pausing
+  one job lets the queue continue with others. Selected starts run only that file.
+- Archived removed rows while retaining attempt history and keeping files unless
+  Delete is explicitly confirmed. Partial deletion validates ownership, locks,
+  and regular files; unknown content and symlinks are preserved.
+- Added local HTTP selection/pause/resume coverage, removal/deletion safety tests,
+  and desktop background-operation/shutdown tests.
+
 ### Browser bridge preview
 
 - Added Chromium/Firefox development extensions for reviewing a selected link or

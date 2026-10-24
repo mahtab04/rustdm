@@ -80,7 +80,10 @@ for Windows x86-64 or Linux x86-64.
 
 Click **New download**, paste a URL, choose a destination filename, and select
 **Download now**. Pause/resume the queue, retry failed jobs, and inspect history
-from the dashboard. Transfer options include connection count, speed limit, and
+from the dashboard. Right-click a card (or use **...**) for individual start,
+pause, resume/retry, copy, removal, and confirmed file deletion. Removal keeps
+files/history; individual pauses stay held while other eligible jobs can run.
+Transfer options include connection count, speed limit, and
 SHA-256 verification. See [desktop usage and storage](apps/ui/README.md).
 Open **Settings** to save default connections, speed limit, resume behavior, and
 initial file picker folder. Defaults apply to new forms; existing jobs retain

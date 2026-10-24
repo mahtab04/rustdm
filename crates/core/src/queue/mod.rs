@@ -7,5 +7,5 @@ mod store;
 mod tests;
 
 pub use model::{HistoryEntry, JobState, QueueEvent, QueueJob, QueueRunSummary};
-pub use runner::QueueRunner;
+pub use runner::{QueueControl, QueueRunner};
 pub use store::DownloadQueue;

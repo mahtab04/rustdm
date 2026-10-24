@@ -1,5 +1,6 @@
+mod job_menu;
 use crate::{
-    backend::{Backend, Event},
+    backend::{Backend, Event, JobAction},
     model::{DownloadForm, Filter, bytes},
     preferences::{Preferences, PreferencesStore},
     settings::Settings,
@@ -9,7 +10,7 @@ use crate::{
 use eframe::egui::{self, Align, Button, Frame, Layout, RichText, Stroke, Ui, Vec2};
 use rustdm_core::{ConnectionProgress, HistoryEntry, JobState, QueueJob, TransferMetrics};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::PathBuf,
     time::{Duration, Instant},
 };
@@ -33,6 +34,9 @@ pub(crate) struct DesktopApp {
     picking: bool,
     notice: Option<String>,
     closing: bool,
+    mutating: HashSet<u64>,
+    pending_delete: Option<QueueJob>,
+    delete_ready: bool,
     refreshed: Instant,
 }
 
@@ -87,6 +91,9 @@ impl DesktopApp {
             picking: false,
             notice,
             closing: false,
+            mutating: HashSet::new(),
+            pending_delete: None,
+            delete_ready: false,
             refreshed: Instant::now(),
         })
     }
@@ -98,7 +105,7 @@ impl DesktopApp {
     }
 
     fn busy(&self) -> bool {
-        self.backend.running() || self.adding || self.picking
+        self.backend.running() || self.adding || self.picking || !self.mutating.is_empty()
     }
 
     fn show_window(&self, ctx: &egui::Context) {
@@ -147,6 +154,8 @@ impl DesktopApp {
     }
 
     fn background_logic(&mut self, ctx: &egui::Context) {
+        // Open confirmation on the frame after the originating menu closes.
+        self.delete_ready = self.pending_delete.is_some();
         self.poll();
         while let Some(action) = self.tray.as_ref().and_then(Tray::next) {
             self.handle_tray_action(action, ctx);
@@ -157,7 +166,7 @@ impl DesktopApp {
         let pending = self
             .jobs
             .iter()
-            .any(|job| Filter::Active.accepts(job.state()));
+            .any(|job| !job.is_held() && Filter::Active.accepts(job.state()));
         let running = self.backend.running();
         if let Some(tray) = &mut self.tray {
             tray.update(running, pending, self.closing);
@@ -192,10 +201,12 @@ impl DesktopApp {
                         Err(error) => self.form.error = Some(error),
                     }
                 }
-                Event::Retried(result) => {
-                    if let Err(error) = result {
-                        self.notice = Some(error);
-                    }
+                Event::JobUpdated { id, result } => {
+                    self.mutating.remove(&id);
+                    self.notice = Some(match result {
+                        Ok(()) => "Download updated.".into(),
+                        Err(error) => error,
+                    });
                     self.backend.refresh();
                 }
                 Event::Stopped(result) => {
@@ -204,8 +215,8 @@ impl DesktopApp {
                             "Queue paused. Your partial downloads are saved.".into()
                         }
                         Ok(summary) => format!(
-                            "Queue finished: {} completed, {} failed.",
-                            summary.completed, summary.failed
+                            "Queue finished: {} completed, {} paused, {} failed.",
+                            summary.completed, summary.paused, summary.failed
                         ),
                         Err(error) => error,
                     });
@@ -379,21 +390,27 @@ impl DesktopApp {
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if self.backend.running() {
-                    if ui.button("Pause queue").clicked() {
+                    if ui
+                        .add_sized([124.0, 38.0], toolbar_button("Pause queue", true))
+                        .clicked()
+                    {
                         self.backend.pause();
                     }
                 } else if ui
                     .add_enabled(
                         self.jobs
                             .iter()
-                            .any(|job| Filter::Active.accepts(job.state())),
-                        Button::new("Start queue"),
+                            .any(|job| !job.is_held() && Filter::Active.accepts(job.state())),
+                        toolbar_button("Start queue", true).min_size(Vec2::new(124.0, 38.0)),
                     )
                     .clicked()
                 {
                     self.backend.start();
                 }
-                if ui.small_button("Refresh").clicked() {
+                if ui
+                    .add_sized([96.0, 38.0], toolbar_button("Refresh", false))
+                    .clicked()
+                {
                     self.backend.refresh();
                 }
             });
@@ -490,129 +507,150 @@ impl DesktopApp {
     }
 
     fn download_card(&mut self, ui: &mut Ui, job: &QueueJob) {
-        card().show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                let extension = job
-                    .output()
-                    .extension()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("FILE")
-                    .to_uppercase();
-                Frame::new()
-                    .fill(BLUE.gamma_multiply(0.13))
-                    .corner_radius(9)
-                    .inner_margin(12)
-                    .show(ui, |ui| {
-                        ui.label(
-                            RichText::new(extension.chars().take(5).collect::<String>())
-                                .small()
-                                .strong()
-                                .color(BLUE),
+        let response = ui
+            .scope_builder(
+                egui::UiBuilder::new()
+                    .id_salt(("download", job.id()))
+                    .sense(egui::Sense::click()),
+                |ui| {
+                    card().show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.horizontal(|ui| {
+                            let extension = job
+                                .output()
+                                .extension()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or("FILE")
+                                .to_uppercase();
+                            Frame::new()
+                                .fill(BLUE.gamma_multiply(0.13))
+                                .corner_radius(9)
+                                .inner_margin(12)
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        RichText::new(
+                                            extension.chars().take(5).collect::<String>(),
+                                        )
+                                        .small()
+                                        .strong()
+                                        .color(BLUE),
+                                    );
+                                });
+                            ui.vertical(|ui| {
+                                ui.label(
+                                    RichText::new(
+                                        job.output()
+                                            .file_name()
+                                            .unwrap_or_default()
+                                            .to_string_lossy(),
+                                    )
+                                    .size(17.0)
+                                    .strong(),
+                                )
+                                .interact(egui::Sense::click())
+                                .context_menu(|ui| self.job_menu(ui, job));
+                                ui.label(
+                                    RichText::new(job.output().display().to_string())
+                                        .small()
+                                        .color(MUTED),
+                                )
+                                .interact(egui::Sense::click())
+                                .context_menu(|ui| self.job_menu(ui, job));
+                            });
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                ui.label(
+                                    RichText::new(job.state().to_string())
+                                        .small()
+                                        .color(status_color(job.state())),
+                                );
+                                ui.menu_button("...", |ui| self.job_menu(ui, job));
+                            });
+                        });
+                        ui.add_space(10.0);
+                        let metrics = self.metrics.get(&job.id());
+                        let fraction = if job.state() == JobState::Completed {
+                            1.0
+                        } else {
+                            metrics
+                                .and_then(|m| {
+                                    m.progress
+                                        .total
+                                        .filter(|n| *n > 0)
+                                        .map(|total| m.progress.downloaded as f32 / total as f32)
+                                })
+                                .unwrap_or(0.0)
+                        };
+                        ui.add(
+                            egui::ProgressBar::new(fraction.clamp(0.0, 1.0))
+                                .desired_height(5.0)
+                                .fill(if job.state() == JobState::Completed {
+                                    GREEN
+                                } else {
+                                    BLUE
+                                }),
                         );
+                        ui.horizontal_wrapped(|ui| {
+                            let message = match (job.state(), metrics) {
+                                (JobState::Completed, _) => "Saved successfully".into(),
+                                (JobState::Running, Some(m)) => {
+                                    let total = m
+                                        .progress
+                                        .total
+                                        .map(bytes)
+                                        .unwrap_or_else(|| "unknown size".into());
+                                    let speed = m
+                                        .bytes_per_second
+                                        .map(|rate| format!("{}/s", bytes(rate as u64)))
+                                        .unwrap_or_else(|| "Measuring...".into());
+                                    let eta = m
+                                        .eta
+                                        .map(|d| format!("{}s remaining", d.as_secs()))
+                                        .unwrap_or_else(|| "ETA unknown".into());
+                                    format!(
+                                        "{} / {total}    {speed}    {eta}",
+                                        bytes(m.progress.downloaded)
+                                    )
+                                }
+                                (JobState::Running, None) => {
+                                    "Connecting and checking remote file...".into()
+                                }
+                                (JobState::Paused, _) if job.is_held() => {
+                                    "Paused — right-click this download to resume".into()
+                                }
+                                (JobState::Paused, _) => {
+                                    "Paused — start the queue or resume this download".into()
+                                }
+                                (JobState::Failed, _) => {
+                                    "Download failed — inspect History, then retry".into()
+                                }
+                                _ => "Waiting in queue".into(),
+                            };
+                            ui.label(RichText::new(message).small().color(MUTED));
+                            if job.sha256().is_some() {
+                                ui.label(RichText::new("SHA-256 enabled").small().color(GREEN));
+                            }
+                            if let Some(rate) = job.bandwidth_limit() {
+                                ui.label(
+                                    RichText::new(format!("Limit: {}/s", bytes(rate)))
+                                        .small()
+                                        .color(MUTED),
+                                );
+                            }
+                        });
+                        if job.state() == JobState::Running
+                            || self.connections.contains_key(&job.id())
+                        {
+                            crate::connection_view::show(
+                                ui,
+                                job.id(),
+                                self.connections.get(&job.id()).map(Vec::as_slice),
+                            );
+                        }
                     });
-                ui.vertical(|ui| {
-                    ui.label(
-                        RichText::new(
-                            job.output()
-                                .file_name()
-                                .unwrap_or_default()
-                                .to_string_lossy(),
-                        )
-                        .size(17.0)
-                        .strong(),
-                    );
-                    ui.label(
-                        RichText::new(job.output().display().to_string())
-                            .small()
-                            .color(MUTED),
-                    );
-                });
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(
-                        RichText::new(job.state().to_string())
-                            .small()
-                            .color(status_color(job.state())),
-                    );
-                    if job.state() == JobState::Failed
-                        && ui
-                            .add_enabled(!self.backend.running(), Button::new("Retry"))
-                            .clicked()
-                    {
-                        self.backend.retry(job.id());
-                    }
-                });
-            });
-            ui.add_space(10.0);
-            let metrics = self.metrics.get(&job.id());
-            let fraction = if job.state() == JobState::Completed {
-                1.0
-            } else {
-                metrics
-                    .and_then(|m| {
-                        m.progress
-                            .total
-                            .filter(|n| *n > 0)
-                            .map(|total| m.progress.downloaded as f32 / total as f32)
-                    })
-                    .unwrap_or(0.0)
-            };
-            ui.add(
-                egui::ProgressBar::new(fraction.clamp(0.0, 1.0))
-                    .desired_height(5.0)
-                    .fill(if job.state() == JobState::Completed {
-                        GREEN
-                    } else {
-                        BLUE
-                    }),
-            );
-            ui.horizontal_wrapped(|ui| {
-                let message = match (job.state(), metrics) {
-                    (JobState::Completed, _) => "Saved successfully".into(),
-                    (JobState::Running, Some(m)) => {
-                        let total = m
-                            .progress
-                            .total
-                            .map(bytes)
-                            .unwrap_or_else(|| "unknown size".into());
-                        let speed = m
-                            .bytes_per_second
-                            .map(|rate| format!("{}/s", bytes(rate as u64)))
-                            .unwrap_or_else(|| "Measuring...".into());
-                        let eta = m
-                            .eta
-                            .map(|d| format!("{}s remaining", d.as_secs()))
-                            .unwrap_or_else(|| "ETA unknown".into());
-                        format!(
-                            "{} / {total}    {speed}    {eta}",
-                            bytes(m.progress.downloaded)
-                        )
-                    }
-                    (JobState::Running, None) => "Connecting and checking remote file...".into(),
-                    (JobState::Paused, _) => "Paused — start the queue to resume".into(),
-                    (JobState::Failed, _) => "Download failed — inspect History, then retry".into(),
-                    _ => "Waiting in queue".into(),
-                };
-                ui.label(RichText::new(message).small().color(MUTED));
-                if job.sha256().is_some() {
-                    ui.label(RichText::new("SHA-256 enabled").small().color(GREEN));
-                }
-                if let Some(rate) = job.bandwidth_limit() {
-                    ui.label(
-                        RichText::new(format!("Limit: {}/s", bytes(rate)))
-                            .small()
-                            .color(MUTED),
-                    );
-                }
-            });
-            if job.state() == JobState::Running || self.connections.contains_key(&job.id()) {
-                crate::connection_view::show(
-                    ui,
-                    job.id(),
-                    self.connections.get(&job.id()).map(Vec::as_slice),
-                );
-            }
-        });
+                },
+            )
+            .response;
+        response.context_menu(|ui| self.job_menu(ui, job));
         ui.add_space(4.0);
     }
 
@@ -743,6 +781,7 @@ impl eframe::App for DesktopApp {
         });
         if !self.closing {
             self.add_dialog(&ctx);
+            self.delete_dialog(&ctx);
             if let Some(preferences) =
                 self.settings
                     .show(&ctx, &self.preferences_store, self.tray.is_some())
@@ -822,3 +861,11 @@ fn history_card(ui: &mut Ui, entry: &HistoryEntry) {
 #[cfg(test)]
 #[path = "../../../tests/ui/app.rs"]
 mod tests;
+
+fn toolbar_button(label: &'static str, primary: bool) -> Button<'static> {
+    Button::new(label)
+        .min_size(Vec2::new(0.0, 38.0))
+        .fill(if primary { BLUE } else { SURFACE })
+        .stroke(Stroke::new(1.0, if primary { BLUE } else { BORDER }))
+        .corner_radius(8)
+}
