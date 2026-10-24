@@ -227,3 +227,18 @@ attempts. Failed jobs do not block later jobs, cancellation stops before claimin
 the next job, and every retry appends history. Job-level progress events let each
 adapter reset its progress meter without putting terminal behavior in the core.
 See [queue semantics](QUEUE.md) for persistence and recovery boundaries.
+
+## Desktop preferences and shutdown
+
+The desktop's `preferences` module owns a versioned, validated settings snapshot
+separate from the core queue. `PreferencesStore` serializes atomic replacements
+under a dedicated OS lock; a save first validates the existing format to preserve
+corrupt or newer files. `settings` owns draft edits and commits them only on Save.
+Saved transfer defaults construct new download forms without changing existing
+jobs, and the initial folder is passed to the background native file picker.
+
+Close requests cancel transfers and wait for pending enqueue/file-picker replies.
+Controls are disabled while closing, and enqueue replies cannot restart the queue
+during shutdown. Finished session handles are reaped so task panics become visible
+error events; startup failures use a native error dialog. Transfer and persistence
+semantics remain in the shared core.

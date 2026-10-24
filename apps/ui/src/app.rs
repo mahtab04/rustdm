@@ -1,6 +1,8 @@
 use crate::{
     backend::{Backend, Event},
     model::{DownloadForm, Filter, bytes},
+    preferences::{Preferences, PreferencesStore},
+    settings::Settings,
     theme::*,
 };
 use eframe::egui::{self, Align, Button, Frame, Layout, RichText, Stroke, Ui, Vec2};
@@ -13,6 +15,9 @@ use std::{
 
 pub(crate) struct DesktopApp {
     backend: Backend,
+    preferences: Preferences,
+    preferences_store: PreferencesStore,
+    settings: Settings,
     jobs: Vec<QueueJob>,
     history: Vec<HistoryEntry>,
     metrics: HashMap<u64, TransferMetrics>,
@@ -34,29 +39,52 @@ impl DesktopApp {
         cc: &eframe::CreationContext<'_>,
         directory: PathBuf,
     ) -> anyhow::Result<Self> {
-        apply(&cc.egui_ctx);
-        let backend = Backend::new(directory, cc.egui_ctx.clone())?;
+        Self::from_context(&cc.egui_ctx, directory)
+    }
+
+    fn from_context(context: &egui::Context, directory: PathBuf) -> anyhow::Result<Self> {
+        apply(context);
+        let preferences_store = PreferencesStore::new(directory.clone());
+        let (preferences, notice) = match preferences_store.load() {
+            Ok(preferences) => (preferences, None),
+            Err(error) => (
+                Preferences::default(),
+                Some(format!("Settings unavailable: {error:#}")),
+            ),
+        };
+        let form = preferences.form();
+        let backend = Backend::new(directory, context.clone())?;
         backend.refresh();
         Ok(Self {
             backend,
+            preferences,
+            preferences_store,
+            settings: Settings::default(),
             jobs: Vec::new(),
             history: Vec::new(),
             metrics: HashMap::new(),
             connections: HashMap::new(),
             filter: Filter::All,
             search: String::new(),
-            form: DownloadForm::default(),
+            form,
             show_add: false,
             focus_url: false,
             adding: false,
             picking: false,
-            notice: None,
+            notice,
             closing: false,
             refreshed: Instant::now(),
         })
     }
 
+    fn begin_close(&mut self) {
+        self.closing = true;
+        self.backend.pause();
+        self.notice = Some("Closing: saving progress. Close the file picker if it is open.".into());
+    }
+
     fn poll(&mut self) {
+        self.backend.reap();
         while let Ok(event) = self.backend.events.try_recv() {
             match event {
                 Event::Snapshot(Ok(snapshot)) => {
@@ -73,9 +101,9 @@ impl DesktopApp {
                     match result {
                         Ok(start) => {
                             self.show_add = false;
-                            self.form = DownloadForm::default();
+                            self.form = self.preferences.form();
                             self.backend.refresh();
-                            if start {
+                            if start && !self.closing {
                                 self.backend.start();
                             }
                         }
@@ -171,7 +199,11 @@ impl DesktopApp {
                 self.filter = filter;
             }
         }
-        ui.add_space(32.0);
+        ui.add_space(20.0);
+        if ui.button("Settings").clicked() {
+            self.settings.open(&self.preferences);
+        }
+        ui.add_space(12.0);
         ui.separator();
         ui.add_space(16.0);
         ui.label(RichText::new("DESKTOP PREVIEW").small().color(BLUE));
@@ -545,7 +577,11 @@ impl DesktopApp {
                             .filter(|s| !s.is_empty())
                             .unwrap_or("download.bin")
                             .to_owned();
-                        self.backend.pick_destination(filename);
+                        self.backend.pick_destination(
+                            filename,
+                            (!self.preferences.download_directory.is_empty())
+                                .then(|| PathBuf::from(&self.preferences.download_directory)),
+                        );
                         self.picking = true;
                     }
                 });
@@ -568,7 +604,7 @@ impl DesktopApp {
                     ui.colored_label(AMBER, error);
                 }
                 ui.add_space(14.0);
-                ui.add_enabled_ui(!self.adding, |ui| {
+                ui.add_enabled_ui(!self.adding && !self.picking, |ui| {
                     ui.horizontal(|ui| {
                         let queue = ui.button("Add to queue").clicked();
                         let start = ui.add(Button::new("Download now").fill(BLUE)).clicked();
@@ -588,7 +624,7 @@ impl DesktopApp {
                     ui.label(RichText::new("Adding download...").small().color(MUTED));
                 }
             });
-        if !open && !self.adding {
+        if !open && !self.adding && !self.picking {
             self.show_add = false;
         }
     }
@@ -598,16 +634,18 @@ impl eframe::App for DesktopApp {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         self.poll();
         let ctx = ui.ctx().clone();
-        if ctx.input(|input| input.modifiers.command && input.key_pressed(egui::Key::N)) {
+        if !self.closing
+            && ctx.input(|input| input.modifiers.command && input.key_pressed(egui::Key::N))
+        {
             self.show_add = true;
             self.focus_url = true;
         }
-        if ctx.input(|i| i.viewport().close_requested()) && self.backend.running() {
+        let busy = self.backend.running() || self.adding || self.picking;
+        if ctx.input(|i| i.viewport().close_requested()) && busy {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            self.closing = true;
-            self.backend.pause();
+            self.begin_close();
         }
-        if self.closing && !self.backend.running() {
+        if self.closing && !busy {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         ctx.request_repaint_after(Duration::from_millis(if self.backend.running() {
@@ -615,15 +653,26 @@ impl eframe::App for DesktopApp {
         } else {
             1000
         }));
-        egui::Panel::left("navigation")
-            .default_size(216.0)
-            .resizable(false)
-            .frame(Frame::new().fill(SIDEBAR).inner_margin(20))
-            .show(ui, |ui| self.sidebar(ui));
-        egui::CentralPanel::default()
-            .frame(Frame::new().fill(BACKGROUND).inner_margin(28))
-            .show(ui, |ui| self.dashboard(ui));
-        self.add_dialog(&ctx);
+        ui.add_enabled_ui(!self.closing, |ui| {
+            egui::Panel::left("navigation")
+                .default_size(216.0)
+                .resizable(false)
+                .frame(Frame::new().fill(SIDEBAR).inner_margin(20))
+                .show(ui, |ui| self.sidebar(ui));
+            egui::CentralPanel::default()
+                .frame(Frame::new().fill(BACKGROUND).inner_margin(28))
+                .show(ui, |ui| self.dashboard(ui));
+        });
+        if !self.closing {
+            self.add_dialog(&ctx);
+            if let Some(preferences) = self.settings.show(&ctx, &self.preferences_store) {
+                self.preferences = preferences;
+                if !self.show_add {
+                    self.form = self.preferences.form();
+                }
+                self.notice = Some("Settings saved. New downloads will use these defaults.".into());
+            }
+        }
     }
 }
 
@@ -688,3 +737,7 @@ fn history_card(ui: &mut Ui, entry: &HistoryEntry) {
     });
     ui.add_space(4.0);
 }
+
+#[cfg(test)]
+#[path = "../../../tests/ui/app.rs"]
+mod tests;

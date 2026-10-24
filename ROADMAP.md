@@ -33,7 +33,10 @@ limitations, and passing supported-platform checks.
 - [x] Persistent queue start/pause/resume/retry through the existing queue runner.
 - [x] Destination picker, bandwidth cap, and optional SHA-256 verification.
 - [x] Live per-worker connection details with byte counts and transfer states.
-- [ ] Remembered preferences, tray behavior, and desktop packaging.
+- [x] Remembered transfer defaults and initial file picker folder.
+- [x] Safe shutdown during pending additions/pickers and visible worker/startup errors.
+- [x] Portable desktop preview packages with checksums and extracted-binary CI checks.
+- [ ] Remembered window position/size, tray behavior, and installer.
 
 ## 3. Browser integration
 

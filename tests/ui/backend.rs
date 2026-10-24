@@ -7,6 +7,28 @@ use std::{
 };
 
 #[test]
+fn desktop_backend_surfaces_panics_instead_of_silently_losing_the_worker() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut backend = Backend::new(temp.path().join("jobs"), egui::Context::default()).unwrap();
+    backend.session = Some(backend.runtime.spawn(async { panic!("test worker panic") }));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while backend.running() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(5));
+    }
+    backend.reap();
+    match backend.events.recv_timeout(Duration::from_secs(1)).unwrap() {
+        Event::Stopped(Err(error)) => assert!(error.contains("test worker panic")),
+        _ => panic!("Expected a visible worker failure"),
+    }
+    assert!(backend.session.is_none());
+    backend.start();
+    assert!(matches!(
+        backend.events.recv_timeout(Duration::from_secs(5)).unwrap(),
+        Event::Stopped(Ok(_))
+    ));
+}
+
+#[test]
 fn desktop_backend_downloads_through_the_persistent_queue_and_reports_completion() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();

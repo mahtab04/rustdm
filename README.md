@@ -80,7 +80,14 @@ Click **New download**, paste a URL, choose a destination filename, and select
 **Download now**. Pause/resume the queue, retry failed jobs, and inspect history
 from the dashboard. Transfer options include connection count, speed limit, and
 SHA-256 verification. See [desktop usage and storage](apps/ui/README.md).
-The published v0.1.0 downloads contain the CLI; desktop packaging comes later.
+Open **Settings** to save default connections, speed limit, resume behavior, and
+initial file picker folder. Defaults apply to new forms; existing jobs retain
+their options. Closing the window waits for active transfers and pending additions.
+
+CI artifacts include `rustdm-desktop-vVERSION-TARGET` portable packages alongside
+the CLI. Extract the desktop package and launch `rustdm-ui.exe` (Windows) or
+`rustdm-ui` (Linux). The published v0.1.0 release still contains only the CLI;
+see [packaging instructions](docs/RELEASE.md) for local desktop archives.
 
 ## Download and resume
 
@@ -122,7 +129,7 @@ Servers without usable ranges/validators use one stream. Retries restart that
 stream from zero; an interrupted non-resumable download currently requires a new
 output path. Large files use multiple saved ranges per connection; free
 connections claim pending ranges as they finish. Range boundaries stay fixed for
-safe resume. Splitting an already active slow range, desktop UI, browser capture,
+safe resume. Splitting an already active slow range, browser capture,
 FTP, and media assembly remain future work. Existing `.rustidm` partial directories are detected and
 resumed in place when there is no `.rustdm` directory for the same output.
 

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Desktop reliability and packaging
+
+- Added Settings for persistent default connections, KiB/s limit, resume behavior,
+  and initial file picker folder. New forms use defaults; existing jobs retain
+  their options. Preferences use version validation, an OS lock, and atomic
+  replacement; malformed or future-version files remain untouched.
+- Shutdown waits for pending additions and open native pickers as well as active
+  transfers, disables controls, and avoids starting queued work while closing.
+- Surface unexpected download-task failures in the dashboard and startup failures
+  in a native error dialog.
+- CI now packages both CLI and desktop previews, verifies extracted executables,
+  and retains Windows/Linux archives and SHA-256 files. No release is published
+  on ordinary commits; the existing v0.1.0 CLI release is unchanged.
+
 ### Live connection details
 
 - Added a collapsible connection table on desktop download cards, showing each
@@ -25,7 +39,7 @@
 - Added a persistent per-user queue directory and `--state-dir` for sharing a
   queue with the CLI. Published v0.1.0 CLI assets remain unchanged.
 - Added desktop form/backend tests under repository-root `tests/ui` and Linux
-  desktop build dependencies in CI. Desktop release packaging is future work.
+  desktop build dependencies in CI.
 
 ## [0.1.0](https://github.com/mahtab04/rustdm/releases/tag/v0.1.0) - 2026-10-22
 

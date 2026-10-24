@@ -78,6 +78,16 @@ impl Backend {
             .as_ref()
             .is_some_and(|task| !task.is_finished())
     }
+    pub(crate) fn reap(&mut self) {
+        if self.session.as_ref().is_some_and(|task| task.is_finished()) {
+            let task = self.session.take().expect("Finished session exists");
+            if let Err(error) = self.runtime.block_on(task) {
+                let _ = self.sender.send(Event::Stopped(Err(format!(
+                    "Download worker stopped unexpectedly: {error}"
+                ))));
+            }
+        }
+    }
     pub(crate) fn pause(&self) {
         self.cancel.cancel();
     }
@@ -197,14 +207,17 @@ impl Backend {
             ctx.request_repaint();
         }));
     }
-    pub(crate) fn pick_destination(&self, filename: String) {
+    pub(crate) fn pick_destination(&self, filename: String, directory: Option<PathBuf>) {
         let sender = self.sender.clone();
         let ctx = self.context.clone();
         self.runtime.spawn_blocking(move || {
-            let path = rfd::FileDialog::new()
+            let mut dialog = rfd::FileDialog::new()
                 .set_title("Save download as")
-                .set_file_name(filename)
-                .save_file();
+                .set_file_name(filename);
+            if let Some(directory) = directory.filter(|path| path.is_dir()) {
+                dialog = dialog.set_directory(directory);
+            }
+            let path = dialog.save_file();
             let _ = sender.send(Event::Destination(path));
             ctx.request_repaint();
         });

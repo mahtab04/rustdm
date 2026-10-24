@@ -20,9 +20,11 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             binary: rustdm
+            desktop_binary: rustdm-ui
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             binary: rustdm.exe
+            desktop_binary: rustdm-ui.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -52,6 +54,14 @@ jobs:
           python .github/scripts/package_release.py
           --target ${{ matrix.target }}
           --binary target/release/${{ matrix.binary }}
+      - name: Package desktop preview
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: >-
+          python .github/scripts/package_release.py
+          --app desktop
+          --target ${{ matrix.target }}
+          --binary target/release/${{ matrix.desktop_binary }}
       - name: Check packaged executable
         shell: bash
         run: python .github/scripts/check_package.py dist

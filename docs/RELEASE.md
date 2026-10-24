@@ -1,4 +1,4 @@
-# CLI release process
+# Release and preview packaging
 
 The CLI currently reports version **0.1.0**. The first public release was
 published on 2026-10-22: [RustDM v0.1.0](https://github.com/mahtab04/rustdm/releases/tag/v0.1.0).
@@ -25,6 +25,23 @@ verifies the archive and executable hashes, and runs the extracted executable's
 version/help commands. Successful branch builds retain packages as Actions
 artifacts for 14 days. Pull requests validate packaging without uploading assets.
 
+## Desktop previews
+
+Current branch CI also produces `rustdm-desktop-vVERSION-TARGET.zip` (Windows)
+or `.tar.gz` (Linux) plus `.sha256`. Each contains `rustdm-ui`, `apps/ui/README.md`, the
+shared documentation, and build metadata with application/executable identity.
+The checker validates every native archive present, supporting both the CLI and
+desktop while remaining compatible with older CLI metadata. Desktop smoke checks
+use `--version` and `--help` without opening a display; CLI checks also exercise
+`download --help`. GUI interactions require a desktop session and manual checks.
+
+In a successful Actions run, download `rustdm-TARGET`, unzip that artifact, then
+extract its `rustdm-desktop-...` archive. On Linux, launch it in an OpenGL desktop
+session. These are development previews identified by commit in `BUILD.json`;
+they do not change the published v0.1.0 CLI assets. Ordinary main pushes only
+build/test/upload artifacts. Version-tag releases still create drafts and require
+separate publication.
+
 ## Local packaging
 
 Python 3.12+ and the native Rust toolchain are required. Build and package from
@@ -33,6 +50,7 @@ the repository root on Windows:
 ```powershell
 .\build.cmd build --workspace --release --locked
 python .github/scripts/package_release.py --target x86_64-pc-windows-msvc --binary target/release/rustdm.exe
+python .github/scripts/package_release.py --app desktop --target x86_64-pc-windows-msvc --binary target/release/rustdm-ui.exe
 python .github/scripts/check_package.py dist
 ```
 
@@ -41,6 +59,7 @@ On Linux:
 ```sh
 cargo build --workspace --release --locked
 python3 .github/scripts/package_release.py --target x86_64-unknown-linux-gnu --binary target/release/rustdm
+python3 .github/scripts/package_release.py --app desktop --target x86_64-unknown-linux-gnu --binary target/release/rustdm-ui
 python3 .github/scripts/check_package.py dist
 ```
 

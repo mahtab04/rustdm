@@ -14,7 +14,10 @@ history share the existing `rustdm-core` engine with the CLI.
 Or run from source: `cargo run -p rustdm-ui --locked`. On Linux, install
 `libxkbcommon-dev` and `libwayland-dev` for builds, and use a desktop session with
 OpenGL support. The current published v0.1.0 archives contain the CLI; this
-new desktop preview is built from source and is not published as a release yet.
+desktop preview can be built from source or downloaded from a successful
+[CI run's artifacts](https://github.com/mahtab04/rustdm/actions/workflows/ci.yml).
+Extract `rustdm-desktop-vVERSION-TARGET` and run `rustdm-ui.exe` / `rustdm-ui`.
+These portable preview packages are not a new published release or an installer.
 
 ## Download
 
@@ -32,7 +35,11 @@ Jobs execute sequentially; each job uses parallel range connections. Pause/resum
 has the same server-validator requirements as the CLI. A checksum mismatch keeps
 the destination absent. An already complete destination is never overwritten.
 Closing an active window requests pause and waits for the worker to stop before
-exiting. Partial files are retained beside the destination.
+exiting. Pending additions finish saving without starting another transfer while
+closing. If a native file picker is open, close it to finish quitting. Controls
+are disabled during shutdown. Unexpected download-task failures appear in the
+dashboard, and startup failures show a native error dialog.
+Partial files are retained beside the destination.
 
 ## Connection details
 
@@ -50,6 +57,22 @@ body transfer; the job still needs assembly/checksum/publication to succeed.
 Telemetry is live for jobs started in this window and retained until it closes.
 It is not persisted or replayed for jobs run by another CLI/desktop process.
 Queue history continues to store terminal job attempts.
+
+## Settings
+
+Open **Settings** in the sidebar to save the default connection count (1?16),
+speed limit in KiB/s (blank means unlimited), resume behavior, and an optional
+existing absolute folder for the native file picker. Save settings explicitly;
+Cancel discards edits. A form already open keeps its edits. New forms use the
+saved defaults; queued and running jobs retain their original options.
+
+Preferences live in `preferences.json` beside the queue. Writes use a separate
+OS lock and an atomic replacement. Missing files use defaults. Malformed,
+unsupported-version, or invalid files produce a warning and remain untouched;
+settings cannot be saved over them. A save already in progress in another window
+returns a retry message rather than blocking the UI. Repair or rename the file before saving
+again. An unavailable saved folder falls back to the file picker's default.
+URLs, output filenames, and expected checksums are not stored as preferences.
 
 ## Persistence
 
@@ -73,5 +96,4 @@ Views, form validation, theme, and background integration are separate modules.
 All desktop tests live under repository-root `tests/ui/`.
 
 Tray behavior, per-job scheduling, remembered window preferences, installer,
-macOS validation, and desktop release archives remain future work. The UI does
-not add a second transfer engine or browser capture.
+and macOS validation remain future work. Browser capture is a later milestone.

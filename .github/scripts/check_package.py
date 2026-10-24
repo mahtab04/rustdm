@@ -22,10 +22,14 @@ def main():
     args = parser.parse_args()
     windows = platform.system() == "Windows"
     suffix = ".zip" if windows else ".tar.gz"
-    archives = list(args.directory.glob(f"rustdm-v*{suffix}"))
-    if len(archives) != 1:
-        parser.error("Expected exactly one native archive in the package directory")
-    archive = archives[0]
+    archives = list(args.directory.glob(f"rustdm-*{suffix}"))
+    if not archives:
+        parser.error("Expected at least one native archive in the package directory")
+    for archive in sorted(archives):
+        check_archive(parser, archive, windows)
+
+
+def check_archive(parser, archive, windows):
     expected, filename = archive.with_name(archive.name + ".sha256").read_text().split()
     if filename != archive.name or digest(archive) != expected:
         parser.error("Archive checksum verification failed")
@@ -41,14 +45,22 @@ def main():
         if len(metadata_files) != 1:
             parser.error("Expected one build metadata file")
         metadata = json.loads(metadata_files[0].read_text())
-        binary = metadata_files[0].parent / ("rustdm.exe" if windows else "rustdm")
+        application = metadata.get("application", "cli")
+        if application not in {"cli", "desktop"}:
+            parser.error("Unknown application in package metadata")
+        executable = "rustdm-ui" if application == "desktop" else "rustdm"
+        filename = executable + (".exe" if windows else "")
+        if metadata.get("executable", filename) != filename:
+            parser.error("Unexpected executable filename in package metadata")
+        binary = metadata_files[0].parent / filename
         if digest(binary) != metadata["binary_sha256"]:
             parser.error("Packaged executable checksum verification failed")
         version = subprocess.check_output([str(binary), "--version"], text=True).strip()
-        if version != f"rustdm {metadata['version']}":
+        if version != f"{executable} {metadata['version']}":
             parser.error("Packaged executable version mismatch")
         subprocess.run([str(binary), "--help"], check=True, stdout=subprocess.DEVNULL)
-        subprocess.run([str(binary), "download", "--help"], check=True, stdout=subprocess.DEVNULL)
+        if application == "cli":
+            subprocess.run([str(binary), "download", "--help"], check=True, stdout=subprocess.DEVNULL)
     print(f"PASS: {archive.name}: archive hash, executable hash, version, and help")
 
 

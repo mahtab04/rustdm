@@ -13,10 +13,7 @@ import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[2]
-TARGETS = {
-    "x86_64-pc-windows-msvc": "rustdm.exe",
-    "x86_64-unknown-linux-gnu": "rustdm",
-}
+TARGETS = ("x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu")
 
 
 def command(*args):
@@ -31,6 +28,7 @@ def digest(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", choices=TARGETS, required=True)
+    parser.add_argument("--app", choices=["cli", "desktop"], default="cli")
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
     parser.add_argument("--tag", default=os.environ.get("RELEASE_TAG") or None)
@@ -45,9 +43,11 @@ def main():
     if f"host: {args.target}" not in rustc.splitlines():
         parser.error("Package target must match the native Rust host")
     binary = args.binary.resolve(strict=True)
-    if binary.name != TARGETS[args.target]:
-        parser.error(f"Expected executable filename {TARGETS[args.target]}")
-    if command(str(binary), "--version") != f"rustdm {version}":
+    executable = "rustdm-ui" if args.app == "desktop" else "rustdm"
+    expected_filename = executable + (".exe" if args.target.endswith("windows-msvc") else "")
+    if binary.name != expected_filename:
+        parser.error(f"Expected executable filename {expected_filename}")
+    if command(str(binary), "--version") != f"{executable} {version}":
         parser.error("Executable version does not match the workspace version")
     dirty = bool(command("git", "status", "--porcelain"))
     if args.tag and dirty:
@@ -56,7 +56,8 @@ def main():
     if not notes.is_file():
         parser.error(f"Missing release notes: {notes.relative_to(ROOT)}")
 
-    name = f"rustdm-v{version}-{args.target}"
+    prefix = "rustdm-desktop" if args.app == "desktop" else "rustdm"
+    name = f"{prefix}-v{version}-{args.target}"
     suffix = ".zip" if binary.suffix == ".exe" else ".tar.gz"
     args.output.mkdir(parents=True, exist_ok=True)
     archive = args.output / f"{name}{suffix}"
@@ -71,9 +72,13 @@ def main():
             f"docs/releases/v{version}.md",
         ]
     ]
+    if args.app == "desktop":
+        files.append((ROOT / "apps/ui/README.md", "apps/ui/README.md"))
     if (ROOT / "LICENSE").is_file():
         files.append((ROOT / "LICENSE", "LICENSE"))
     metadata = (json.dumps({
+        "application": args.app,
+        "executable": binary.name,
         "version": version,
         "target": args.target,
         "commit": command("git", "rev-parse", "HEAD"),

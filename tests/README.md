@@ -11,7 +11,7 @@ component they exercise.
 | `core/queue/` | Queue persistence, locking, recovery, and history |
 | `cli/args.rs` | Argument parsing, rate validation, and command compatibility |
 | `cli/downloads.rs` | HTTP transfers, connection telemetry/retry/resume accounting, dynamic scheduling/resume, validator interoperability, checksum/publication safety, aggregate pacing, cancellation/resume, queue execution, and CLI subprocesses |
-| `ui/` | Desktop form validation, filtering, background HTTP execution, and queue errors |
+| `ui/` | Desktop form validation, filtering, background HTTP execution, queue/worker errors, and preferences round-trip/corruption safety |
 | `web/` | Reserved for web interface tests |
 | `browser/` | Reserved for browser integration tests |
 

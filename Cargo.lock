@@ -2596,8 +2596,11 @@ dependencies = [
  "anyhow",
  "clap",
  "eframe",
+ "fs2",
  "rfd",
  "rustdm-core",
+ "serde",
+ "serde_json",
  "tempfile",
  "tokio",
 ]
