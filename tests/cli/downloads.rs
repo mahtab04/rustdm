@@ -1055,3 +1055,150 @@ async fn weak_etags_use_last_modified_for_ranges_or_fall_back_without_it() {
         }
     }
 }
+
+#[derive(Clone)]
+struct ConnectionLog {
+    events: Arc<Mutex<Vec<rustdm_core::ConnectionProgress>>>,
+    cancel: Option<CancellationToken>,
+}
+impl ProgressObserver for ConnectionLog {
+    fn on_progress(&self, _: Progress) {}
+    fn on_connection(&self, event: rustdm_core::ConnectionProgress) {
+        self.events.lock().unwrap().push(event);
+        if event.downloaded >= 2048
+            && let Some(cancel) = &self.cancel
+        {
+            cancel.cancel();
+        }
+    }
+}
+
+#[tokio::test]
+async fn connection_telemetry_tracks_workers_across_dynamic_ranges_and_retries() {
+    use rustdm_core::ConnectionStatus;
+    for mode in [0, 1, 4, 5] {
+        let server = Server::with_size(mode, 2 * 1024 * 1024);
+        let temp = tempfile::tempdir().unwrap();
+        let output = temp.path().join("connections.bin");
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let observer = ConnectionLog {
+            events: events.clone(),
+            cancel: None,
+        };
+        let result = DownloadManager::new(server.options(&output).with_connections(2))
+            .download(CancellationToken::new(), observer)
+            .await
+            .unwrap();
+        let events = events.lock().unwrap();
+        let mut last = std::collections::BTreeMap::new();
+        for event in events.iter() {
+            assert!((1..=result.connections).contains(&event.id));
+            if let Some(previous) = last.insert(event.id, *event) {
+                assert!(event.downloaded >= previous.downloaded);
+            }
+        }
+        assert_eq!(last.len(), result.connections);
+        assert!(
+            last.values()
+                .all(|event| event.status == ConnectionStatus::Completed)
+        );
+        assert_eq!(
+            last.values().map(|event| event.downloaded).sum::<u64>(),
+            server.data.len() as u64
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| event.status == ConnectionStatus::Sending)
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| event.status == ConnectionStatus::Receiving)
+        );
+        if mode == 4 {
+            assert!(
+                events
+                    .iter()
+                    .any(|event| event.status == ConnectionStatus::Retrying)
+            );
+        }
+        assert_eq!(fs::read(output).unwrap(), *server.data);
+    }
+}
+
+#[tokio::test]
+async fn connection_telemetry_records_pause_and_excludes_saved_resume_bytes() {
+    use rustdm_core::ConnectionStatus;
+    let server = Server::new(0);
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("connection-resume.bin");
+    let cancel = CancellationToken::new();
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let observer = ConnectionLog {
+        events: events.clone(),
+        cancel: Some(cancel.clone()),
+    };
+    assert!(
+        DownloadManager::new(server.options(&output))
+            .download(cancel, observer)
+            .await
+            .is_err()
+    );
+    assert!(
+        events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|event| event.status == ConnectionStatus::Paused)
+    );
+    let resumed_events = Arc::new(Mutex::new(Vec::new()));
+    let result = DownloadManager::new(server.options(&output).with_resume(true))
+        .download(
+            CancellationToken::new(),
+            ConnectionLog {
+                events: resumed_events.clone(),
+                cancel: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(result.resumed_bytes > 0);
+    let mut last = std::collections::BTreeMap::new();
+    for event in resumed_events.lock().unwrap().iter() {
+        last.insert(event.id, *event);
+    }
+    assert_eq!(
+        last.values().map(|event| event.downloaded).sum::<u64>(),
+        result.bytes - result.resumed_bytes
+    );
+    assert_eq!(fs::read(output).unwrap(), *server.data);
+}
+
+#[tokio::test]
+async fn invalid_range_reports_a_failed_connection_without_publishing() {
+    let server = Server::new(2);
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("connection-fail.bin");
+    let events = Arc::new(Mutex::new(Vec::new()));
+    assert!(
+        DownloadManager::new(server.options(&output).with_retries(0))
+            .download(
+                CancellationToken::new(),
+                ConnectionLog {
+                    events: events.clone(),
+                    cancel: None
+                }
+            )
+            .await
+            .is_err()
+    );
+    assert!(
+        events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|event| event.status == rustdm_core::ConnectionStatus::Failed)
+    );
+    assert!(!output.exists());
+}

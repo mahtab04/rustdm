@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Live connection details
+
+- Added a collapsible connection table on desktop download cards, showing each
+  worker's newly downloaded bytes and request/receive/retry/terminal state.
+- Added optional `ProgressObserver::on_connection` telemetry and queue connection
+  events. Worker IDs remain stable while processing multiple dynamic ranges.
+- Coalesced live snapshots separately from lifecycle events and retained final
+  snapshots when the queue moves to another job. Saved resume bytes are excluded
+  from per-worker counters; single-stream fallback reports one worker.
+- Added HTTP coverage for dynamic ranges, retry, pause/resume byte accounting,
+  failures, and final desktop telemetry delivery.
+
 ### Desktop preview
 
 - Added the native `rustdm-ui` workspace application with a modern dark dashboard,

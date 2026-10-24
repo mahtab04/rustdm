@@ -1,6 +1,7 @@
 use crate::{
     CancellationToken,
     bandwidth::BandwidthLimiter,
+    connections::{ConnectionReporter, ConnectionStatus},
     domain::{Progress, ProgressObserver, Remote, Segment, Validator},
     http::{identity, range_header, text_header, validator},
     state::part_size,
@@ -28,6 +29,7 @@ pub(crate) struct SegmentWorker {
     pub(crate) downloaded: Arc<AtomicU64>,
     pub(crate) cancel: CancellationToken,
     pub(crate) limiter: Arc<BandwidthLimiter>,
+    pub(crate) connection: Arc<ConnectionReporter>,
 }
 
 impl SegmentWorker {
@@ -49,6 +51,7 @@ impl SegmentWorker {
                     return Err(error);
                 }
                 Err(_) => {
+                    self.connection.status(progress, ConnectionStatus::Retrying);
                     tokio::select! {
                         _ = self.cancel.cancelled() => bail!("Download paused"),
                         _ = tokio::time::sleep(Duration::from_millis(250 * (1 << attempt.min(4)))) => {},
@@ -60,6 +63,7 @@ impl SegmentWorker {
     }
 
     async fn attempt(&self, current: u64, progress: &dyn ProgressObserver) -> Result<()> {
+        self.connection.status(progress, ConnectionStatus::Sending);
         let start = self.segment.start + current;
         let end = self.segment.end - 1;
         let request = self
@@ -97,6 +101,8 @@ impl SegmentWorker {
             .create(true)
             .append(true)
             .open(&self.path)?;
+        self.connection
+            .status(progress, ConnectionStatus::Receiving);
         let result = async {
             let mut received = 0;
             loop {
@@ -115,6 +121,7 @@ impl SegmentWorker {
                     self.limiter.consume(slice.len(), &self.cancel).await?;
                     file.write_all(slice)?;
                     received += slice.len() as u64;
+                    self.connection.received(slice.len(), progress);
                     let downloaded = self
                         .downloaded
                         .fetch_add(slice.len() as u64, Ordering::Relaxed)
@@ -141,7 +148,9 @@ pub(crate) async fn sequential(
     cancel: &CancellationToken,
     progress: &dyn ProgressObserver,
     limiter: &BandwidthLimiter,
+    connection: &ConnectionReporter,
 ) -> Result<u64> {
+    connection.status(progress, ConnectionStatus::Sending);
     let mut response = tokio::select! {
         _ = cancel.cancelled() => bail!("Download paused"),
         response = client.get(&remote.final_url).send() => response?,
@@ -163,6 +172,7 @@ pub(crate) async fn sequential(
     }
     let total = response.content_length().or(remote.size);
     let mut file = File::create(path)?;
+    connection.status(progress, ConnectionStatus::Receiving);
     let result = async {
         let mut downloaded = 0u64;
         loop {
@@ -184,6 +194,7 @@ pub(crate) async fn sequential(
                 limiter.consume(slice.len(), cancel).await?;
                 file.write_all(slice)?;
                 downloaded += slice.len() as u64;
+                connection.received(slice.len(), progress);
                 progress.on_progress(Progress { downloaded, total });
             }
         }

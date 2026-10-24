@@ -1,8 +1,8 @@
 use anyhow::Result;
 use eframe::egui;
 use rustdm_core::{
-    CancellationToken, DownloadOptions, DownloadQueue, HistoryEntry, ProgressMeter, QueueEvent,
-    QueueJob, QueueRunSummary, TransferMetrics,
+    CancellationToken, ConnectionProgress, DownloadOptions, DownloadQueue, HistoryEntry,
+    ProgressMeter, QueueEvent, QueueJob, QueueRunSummary, TransferMetrics,
 };
 use std::{
     path::PathBuf,
@@ -15,10 +15,17 @@ pub(crate) struct Snapshot {
     pub(crate) history: Vec<HistoryEntry>,
 }
 
+#[derive(Clone)]
+pub(crate) struct ConnectionSnapshot {
+    pub(crate) job_id: u64,
+    pub(crate) workers: Vec<ConnectionProgress>,
+}
+
 pub(crate) enum Event {
     Snapshot(Result<Snapshot, String>),
     Added(Result<bool, String>),
     Changed,
+    Connections(ConnectionSnapshot),
     Stopped(Result<QueueRunSummary, String>),
     Retried(Result<(), String>),
     Destination(Option<PathBuf>),
@@ -32,6 +39,8 @@ pub(crate) struct Backend {
     pub(crate) events: mpsc::Receiver<Event>,
     pub(crate) progress: watch::Receiver<Option<(u64, TransferMetrics)>>,
     progress_sender: watch::Sender<Option<(u64, TransferMetrics)>>,
+    pub(crate) connections: watch::Receiver<Option<ConnectionSnapshot>>,
+    connection_sender: watch::Sender<Option<ConnectionSnapshot>>,
     session: Option<JoinHandle<()>>,
     cancel: CancellationToken,
     context: egui::Context,
@@ -46,6 +55,7 @@ impl Backend {
         let queue = DownloadQueue::open(directory)?;
         let (sender, events) = mpsc::channel();
         let (progress_sender, progress) = watch::channel(None);
+        let (connection_sender, connections) = watch::channel(None);
         Ok(Self {
             runtime,
             queue,
@@ -53,6 +63,8 @@ impl Backend {
             events,
             progress,
             progress_sender,
+            connections,
+            connection_sender,
             session: None,
             cancel: CancellationToken::new(),
             context,
@@ -117,6 +129,7 @@ impl Backend {
         let queue = self.queue.clone();
         let sender = self.sender.clone();
         let progress = self.progress_sender.clone();
+        let connections = self.connection_sender.clone();
         let ctx = self.context.clone();
         self.session = Some(self.runtime.spawn(async move {
             let events = sender.clone();
@@ -126,7 +139,11 @@ impl Backend {
                 let mut runner = queue.runner()?;
                 runner
                     .run(cancel, move |event| match event {
-                        QueueEvent::Started { .. } => {
+                        QueueEvent::Started { job_id, .. } => {
+                            connections.send_replace(Some(ConnectionSnapshot {
+                                job_id,
+                                workers: Vec::new(),
+                            }));
                             *meter.lock().expect("Progress meter poisoned") = ProgressMeter::new();
                             progress.send_replace(None);
                             let _ = events.send(Event::Changed);
@@ -142,7 +159,32 @@ impl Backend {
                                 .observe(value);
                             progress.send_replace(Some((job_id, metrics)));
                         }
+                        QueueEvent::Connection { job_id, progress } => {
+                            connections.send_modify(|snapshot| {
+                                if snapshot.as_ref().is_none_or(|s| s.job_id != job_id) {
+                                    *snapshot = Some(ConnectionSnapshot {
+                                        job_id,
+                                        workers: Vec::new(),
+                                    });
+                                }
+                                let workers = &mut snapshot
+                                    .as_mut()
+                                    .expect("Connection snapshot initialized")
+                                    .workers;
+                                if let Some(worker) =
+                                    workers.iter_mut().find(|worker| worker.id == progress.id)
+                                {
+                                    *worker = progress;
+                                } else {
+                                    workers.push(progress);
+                                    workers.sort_by_key(|worker| worker.id);
+                                }
+                            });
+                        }
                         QueueEvent::Finished { .. } => {
+                            if let Some(snapshot) = connections.borrow().clone() {
+                                let _ = events.send(Event::Connections(snapshot));
+                            }
                             let _ = events.send(Event::Changed);
                             repaint.request_repaint();
                         }

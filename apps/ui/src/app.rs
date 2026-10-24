@@ -4,7 +4,7 @@ use crate::{
     theme::*,
 };
 use eframe::egui::{self, Align, Button, Frame, Layout, RichText, Stroke, Ui, Vec2};
-use rustdm_core::{HistoryEntry, JobState, QueueJob, TransferMetrics};
+use rustdm_core::{ConnectionProgress, HistoryEntry, JobState, QueueJob, TransferMetrics};
 use std::{
     collections::HashMap,
     path::PathBuf,
@@ -16,6 +16,7 @@ pub(crate) struct DesktopApp {
     jobs: Vec<QueueJob>,
     history: Vec<HistoryEntry>,
     metrics: HashMap<u64, TransferMetrics>,
+    connections: HashMap<u64, Vec<ConnectionProgress>>,
     filter: Filter,
     search: String,
     form: DownloadForm,
@@ -41,6 +42,7 @@ impl DesktopApp {
             jobs: Vec::new(),
             history: Vec::new(),
             metrics: HashMap::new(),
+            connections: HashMap::new(),
             filter: Filter::All,
             search: String::new(),
             form: DownloadForm::default(),
@@ -63,6 +65,9 @@ impl DesktopApp {
                 }
                 Event::Snapshot(Err(error)) => self.notice = Some(error),
                 Event::Changed => self.backend.refresh(),
+                Event::Connections(snapshot) => {
+                    self.connections.insert(snapshot.job_id, snapshot.workers);
+                }
                 Event::Added(result) => {
                     self.adding = false;
                     match result {
@@ -106,6 +111,9 @@ impl DesktopApp {
         }
         if let Some((id, metrics)) = *self.backend.progress.borrow_and_update() {
             self.metrics.insert(id, metrics);
+        }
+        if let Some(snapshot) = self.backend.connections.borrow_and_update().clone() {
+            self.connections.insert(snapshot.job_id, snapshot.workers);
         }
         if self.refreshed.elapsed() >= Duration::from_secs(2) {
             self.backend.refresh();
@@ -480,6 +488,13 @@ impl DesktopApp {
                     );
                 }
             });
+            if job.state() == JobState::Running || self.connections.contains_key(&job.id()) {
+                crate::connection_view::show(
+                    ui,
+                    job.id(),
+                    self.connections.get(&job.id()).map(Vec::as_slice),
+                );
+            }
         });
         ui.add_space(4.0);
     }

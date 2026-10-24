@@ -1,12 +1,13 @@
 use crate::{
     CancellationToken,
     bandwidth::BandwidthLimiter,
+    connections::{ConnectionReporter, ConnectionStatus},
     domain::{DownloadOptions, DownloadSummary, Progress, ProgressObserver},
     http::HttpSource,
     state::{DownloadState, part_size},
     transfer::{SegmentWorker, sequential},
 };
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 use reqwest::Url;
 use std::{
     sync::{
@@ -87,7 +88,7 @@ impl DownloadManager {
                     .collect::<Vec<_>>(),
             );
             let next = Arc::new(AtomicUsize::new(0));
-            for _ in 0..options.connections.min(parts.len()) {
+            for slot in 0..options.connections.min(parts.len()) {
                 let parts = parts.clone();
                 let next = next.clone();
                 let client = source.client().clone();
@@ -99,26 +100,34 @@ impl DownloadManager {
                 let limiter = limiter.clone();
                 let progress = progress.clone();
                 tasks.spawn(async move {
-                    loop {
-                        ensure!(!cancel.is_cancelled(), "Download paused");
-                        let index = next.fetch_add(1, Ordering::Relaxed);
-                        let Some((path, segment)) = parts.get(index) else {
-                            return Ok(());
-                        };
-                        let worker = SegmentWorker {
-                            client: client.clone(),
-                            url: url.clone(),
-                            validator: validator.clone(),
-                            total: size,
-                            path: path.clone(),
-                            segment: segment.clone(),
-                            retries,
-                            downloaded: downloaded.clone(),
-                            cancel: cancel.clone(),
-                            limiter: limiter.clone(),
-                        };
-                        worker.run(progress.as_ref()).await?;
+                    let connection = Arc::new(ConnectionReporter::new(slot + 1));
+                    connection.status(progress.as_ref(), ConnectionStatus::Waiting);
+                    let result = async {
+                        loop {
+                            ensure!(!cancel.is_cancelled(), "Download paused");
+                            let index = next.fetch_add(1, Ordering::Relaxed);
+                            let Some((path, segment)) = parts.get(index) else {
+                                return Ok(());
+                            };
+                            let worker = SegmentWorker {
+                                client: client.clone(),
+                                url: url.clone(),
+                                validator: validator.clone(),
+                                total: size,
+                                path: path.clone(),
+                                segment: segment.clone(),
+                                retries,
+                                downloaded: downloaded.clone(),
+                                cancel: cancel.clone(),
+                                limiter: limiter.clone(),
+                                connection: connection.clone(),
+                            };
+                            worker.run(progress.as_ref()).await?;
+                        }
                     }
+                    .await;
+                    connection.finish(&result, &cancel, progress.as_ref());
+                    result
                 });
             }
             let mut error = None;
@@ -136,6 +145,8 @@ impl DownloadManager {
             }
             (size, manifest.segments.len())
         } else {
+            let connection = ConnectionReporter::new(1);
+            connection.status(progress.as_ref(), ConnectionStatus::Waiting);
             let mut result = None;
             for attempt in 0..=options.retries {
                 let attempt_result = sequential(
@@ -145,6 +156,7 @@ impl DownloadManager {
                     &cancel,
                     progress.as_ref(),
                     &limiter,
+                    &connection,
                 )
                 .await;
                 let done = attempt_result.is_ok() || cancel.is_cancelled();
@@ -152,13 +164,15 @@ impl DownloadManager {
                 if done || attempt == options.retries {
                     break;
                 }
+                connection.status(progress.as_ref(), ConnectionStatus::Retrying);
                 tokio::select! {
-                    _ = cancel.cancelled() => bail!("Download paused; this server requires a fresh download"),
+                    _ = cancel.cancelled() => { break; },
                     _ = tokio::time::sleep(Duration::from_millis(250 * (1 << attempt.min(4)))) => {},
                 }
             }
+            let result = result.unwrap();
+            connection.finish(&result, &cancel, progress.as_ref());
             let bytes = result
-                .unwrap()
                 .context("Single-stream download failed; use a new output path to restart")?;
             (bytes, 1)
         };

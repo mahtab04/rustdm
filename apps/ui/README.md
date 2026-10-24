@@ -34,6 +34,23 @@ the destination absent. An already complete destination is never overwritten.
 Closing an active window requests pause and waits for the worker to stop before
 exiting. Partial files are retained beside the destination.
 
+## Connection details
+
+Expand **Connection details** under a download card to see connection number,
+downloaded bytes, and live status (sending request, receiving data, retrying,
+completed, paused, or failed). The panel opens automatically for active jobs.
+
+Rows represent logical transfer workers, not physical TCP sockets: the HTTP
+client can reuse connections and a worker may handle multiple saved ranges.
+Counters show new response-body bytes written during this execution, excluding
+saved resume bytes, probe traffic, and protocol headers. A restarted single
+stream can count retransferred bytes again. A completed worker has finished its
+body transfer; the job still needs assembly/checksum/publication to succeed.
+
+Telemetry is live for jobs started in this window and retained until it closes.
+It is not persisted or replayed for jobs run by another CLI/desktop process.
+Queue history continues to store terminal job attempts.
+
 ## Persistence
 
 The default queue is `%LOCALAPPDATA%\RustDM` on Windows, `$XDG_DATA_HOME/RustDM`

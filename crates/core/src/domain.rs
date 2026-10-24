@@ -112,6 +112,8 @@ impl DownloadOptions {
 /// UI-independent progress interface. Closures implement it automatically.
 pub trait ProgressObserver: Send + Sync {
     fn on_progress(&self, progress: Progress);
+    /// Optional live worker telemetry. Existing closure observers remain supported.
+    fn on_connection(&self, _progress: crate::ConnectionProgress) {}
 }
 impl<F: Fn(Progress) + Send + Sync> ProgressObserver for F {
     fn on_progress(&self, progress: Progress) {

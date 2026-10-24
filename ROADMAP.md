@@ -32,6 +32,7 @@ limitations, and passing supported-platform checks.
 - [x] Modern dashboard, URL/destination dialog, live progress/speed/ETA, search, and history.
 - [x] Persistent queue start/pause/resume/retry through the existing queue runner.
 - [x] Destination picker, bandwidth cap, and optional SHA-256 verification.
+- [x] Live per-worker connection details with byte counts and transfer states.
 - [ ] Remembered preferences, tray behavior, and desktop packaging.
 
 ## 3. Browser integration

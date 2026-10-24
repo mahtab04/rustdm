@@ -122,6 +122,10 @@ pub enum QueueEvent {
         job_id: u64,
         progress: crate::Progress,
     },
+    Connection {
+        job_id: u64,
+        progress: crate::ConnectionProgress,
+    },
     Finished {
         job_id: u64,
         state: JobState,

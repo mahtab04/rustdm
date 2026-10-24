@@ -8,7 +8,7 @@ library so each interface uses the same behavior.
 
 **Current milestone:** desktop UI. The v0.1.0 CLI is released. A native desktop
 preview now provides a modern dashboard, download dialog, live progress,
-queue controls, and history using the same Rust engine.
+queue controls, live connection details, and history using the same Rust engine.
 
 ## Features
 

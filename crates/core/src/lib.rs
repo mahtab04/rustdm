@@ -4,6 +4,7 @@
 
 mod bandwidth;
 mod checksum;
+mod connections;
 mod domain;
 mod http;
 mod manager;
@@ -13,6 +14,7 @@ mod state;
 mod transfer;
 
 pub use checksum::Sha256Checksum;
+pub use connections::{ConnectionProgress, ConnectionStatus};
 pub use domain::{DownloadOptions, DownloadSummary, Progress, ProgressObserver};
 pub use manager::DownloadManager;
 pub use metrics::{ProgressMeter, TransferMetrics};

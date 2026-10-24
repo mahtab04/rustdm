@@ -75,6 +75,7 @@ pub(crate) async fn queue(queue: DownloadQueue) -> Result<()> {
             QueueEvent::Progress { job_id, progress } => {
                 tx.send_replace(Some((job_id, progress)));
             }
+            QueueEvent::Connection { .. } => {}
             QueueEvent::Finished {
                 job_id,
                 state,

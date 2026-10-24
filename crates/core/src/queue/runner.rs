@@ -1,5 +1,5 @@
 use super::{DownloadQueue, JobState, QueueEvent, QueueRunSummary};
-use crate::{CancellationToken, DownloadManager, Progress};
+use crate::{CancellationToken, ConnectionProgress, DownloadManager, Progress, ProgressObserver};
 use anyhow::Result;
 use std::{fs::File, sync::Arc};
 
@@ -31,7 +31,7 @@ impl QueueRunner {
     where
         O: Fn(QueueEvent) + Send + Sync + 'static,
     {
-        let observer = Arc::new(observer);
+        let observer: Arc<dyn Fn(QueueEvent) + Send + Sync> = Arc::new(observer);
         let mut result = QueueRunSummary::default();
         loop {
             if cancel.is_cancelled() {
@@ -45,15 +45,13 @@ impl QueueRunner {
                 job_id: job.id(),
                 output: job.output().to_path_buf(),
             });
-            let progress = observer.clone();
             let id = job.id();
+            let progress = QueueObserver {
+                id,
+                callback: observer.clone(),
+            };
             let download = DownloadManager::new(job.options())
-                .download(cancel.child_token(), move |value: Progress| {
-                    progress(QueueEvent::Progress {
-                        job_id: id,
-                        progress: value,
-                    });
-                })
+                .download(cancel.child_token(), progress)
                 .await;
             // Successful publication wins over a cancellation arriving just after
             // completion; the job must not be retried over its completed output.
@@ -84,5 +82,24 @@ impl QueueRunner {
             }
         }
         Ok(result)
+    }
+}
+
+struct QueueObserver {
+    id: u64,
+    callback: Arc<dyn Fn(QueueEvent) + Send + Sync>,
+}
+impl ProgressObserver for QueueObserver {
+    fn on_progress(&self, progress: Progress) {
+        (self.callback)(QueueEvent::Progress {
+            job_id: self.id,
+            progress,
+        });
+    }
+    fn on_connection(&self, progress: ConnectionProgress) {
+        (self.callback)(QueueEvent::Connection {
+            job_id: self.id,
+            progress,
+        });
     }
 }

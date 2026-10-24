@@ -64,6 +64,24 @@ executors. Closing the window requests cancellation and defers closure until the
 runner has stopped, preserving the existing recovery behavior. The desktop
 shares the core's single active queue job and does not introduce a new engine.
 
+## Connection telemetry
+
+`ProgressObserver::on_connection(ConnectionProgress)` is an optional callback;
+existing progress closures keep working. `ConnectionReporter` owns one-based
+worker IDs and new-byte counters for an execution. Range workers emit request,
+receive, and retry states, and the manager emits terminal states after each
+worker exits. IDs/counters persist across dynamically assigned ranges. The
+single-stream path uses the same reporting contract, including retry/backoff
+cancellation. Resume bytes remain solely in aggregate progress.
+
+`QueueObserver` bridges this into `QueueEvent::Connection`. Consumers matching
+queue events must handle the new variant; the CLI ignores it. The desktop
+coalesces a bounded set of worker rows in a separate watch channel and sends a
+final snapshot through the lifecycle channel before changing jobs, so a fast
+queue transition does not lose the previous job's final rows. Telemetry is not
+stored in queue JSON. Connection completion describes the body transfer and does
+not bypass the job's final checksum or publication checks.
+
 ## Test organization
 
 All test source files live under repository-root [`tests/`](../tests/README.md).
