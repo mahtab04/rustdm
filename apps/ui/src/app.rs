@@ -4,6 +4,7 @@ use crate::{
     preferences::{Preferences, PreferencesStore},
     settings::Settings,
     theme::*,
+    tray::{Action, Tray},
 };
 use eframe::egui::{self, Align, Button, Frame, Layout, RichText, Stroke, Ui, Vec2};
 use rustdm_core::{ConnectionProgress, HistoryEntry, JobState, QueueJob, TransferMetrics};
@@ -15,6 +16,7 @@ use std::{
 
 pub(crate) struct DesktopApp {
     backend: Backend,
+    tray: Option<Tray>,
     preferences: Preferences,
     preferences_store: PreferencesStore,
     settings: Settings,
@@ -39,7 +41,18 @@ impl DesktopApp {
         cc: &eframe::CreationContext<'_>,
         directory: PathBuf,
     ) -> anyhow::Result<Self> {
-        Self::from_context(&cc.egui_ctx, directory)
+        let mut app = Self::from_context(&cc.egui_ctx, directory)?;
+        match Tray::new(&cc.egui_ctx) {
+            Ok(tray) => app.tray = tray,
+            Err(error) => {
+                let warning = format!("System tray unavailable; window close will quit: {error:#}");
+                app.notice = Some(match app.notice.take() {
+                    Some(notice) => format!("{notice}. {warning}"),
+                    None => warning,
+                });
+            }
+        }
+        Ok(app)
     }
 
     fn from_context(context: &egui::Context, directory: PathBuf) -> anyhow::Result<Self> {
@@ -57,6 +70,7 @@ impl DesktopApp {
         backend.refresh();
         Ok(Self {
             backend,
+            tray: None,
             preferences,
             preferences_store,
             settings: Settings::default(),
@@ -81,6 +95,74 @@ impl DesktopApp {
         self.closing = true;
         self.backend.pause();
         self.notice = Some("Closing: saving progress. Close the file picker if it is open.".into());
+    }
+
+    fn busy(&self) -> bool {
+        self.backend.running() || self.adding || self.picking
+    }
+
+    fn show_window(&self, ctx: &egui::Context) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+    }
+
+    fn hide_to_tray(&mut self, ctx: &egui::Context) {
+        if self.tray.is_none() || self.closing {
+            return;
+        }
+        if self.picking {
+            self.notice = Some("Finish choosing a destination before hiding RustDM.".into());
+            return;
+        }
+        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+    }
+
+    fn handle_tray_action(&mut self, action: Action, ctx: &egui::Context) {
+        match action {
+            Action::Show => self.show_window(ctx),
+            Action::Start if !self.closing => self.backend.start(),
+            Action::Pause => self.backend.pause(),
+            Action::Quit => {
+                // Quit always exits, even when closing the window normally hides it.
+                self.begin_close();
+                if self.picking {
+                    self.show_window(ctx);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn window_close(&mut self, ctx: &egui::Context) {
+        if !self.closing && self.preferences.close_to_tray && self.tray.is_some() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.hide_to_tray(ctx);
+        } else {
+            self.begin_close();
+            if self.busy() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            }
+        }
+    }
+
+    fn background_logic(&mut self, ctx: &egui::Context) {
+        self.poll();
+        while let Some(action) = self.tray.as_ref().and_then(Tray::next) {
+            self.handle_tray_action(action, ctx);
+        }
+        if self.closing && !self.busy() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        let pending = self
+            .jobs
+            .iter()
+            .any(|job| Filter::Active.accepts(job.state()));
+        let running = self.backend.running();
+        if let Some(tray) = &mut self.tray {
+            tray.update(running, pending, self.closing);
+        }
+        ctx.request_repaint_after(Duration::from_millis(if running { 100 } else { 1000 }));
     }
 
     fn poll(&mut self) {
@@ -202,6 +284,9 @@ impl DesktopApp {
         ui.add_space(20.0);
         if ui.button("Settings").clicked() {
             self.settings.open(&self.preferences);
+        }
+        if self.tray.is_some() && ui.button("Hide to tray").clicked() {
+            self.hide_to_tray(ui.ctx());
         }
         ui.add_space(12.0);
         ui.separator();
@@ -631,8 +716,11 @@ impl DesktopApp {
 }
 
 impl eframe::App for DesktopApp {
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.background_logic(ctx);
+    }
+
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
-        self.poll();
         let ctx = ui.ctx().clone();
         if !self.closing
             && ctx.input(|input| input.modifiers.command && input.key_pressed(egui::Key::N))
@@ -640,19 +728,9 @@ impl eframe::App for DesktopApp {
             self.show_add = true;
             self.focus_url = true;
         }
-        let busy = self.backend.running() || self.adding || self.picking;
-        if ctx.input(|i| i.viewport().close_requested()) && busy {
-            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            self.begin_close();
+        if ctx.input(|i| i.viewport().close_requested()) {
+            self.window_close(&ctx);
         }
-        if self.closing && !busy {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-        }
-        ctx.request_repaint_after(Duration::from_millis(if self.backend.running() {
-            100
-        } else {
-            1000
-        }));
         ui.add_enabled_ui(!self.closing, |ui| {
             egui::Panel::left("navigation")
                 .default_size(216.0)
@@ -665,7 +743,10 @@ impl eframe::App for DesktopApp {
         });
         if !self.closing {
             self.add_dialog(&ctx);
-            if let Some(preferences) = self.settings.show(&ctx, &self.preferences_store) {
+            if let Some(preferences) =
+                self.settings
+                    .show(&ctx, &self.preferences_store, self.tray.is_some())
+            {
                 self.preferences = preferences;
                 if !self.show_add {
                     self.form = self.preferences.form();

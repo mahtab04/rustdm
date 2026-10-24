@@ -228,6 +228,21 @@ the next job, and every retry appends history. Job-level progress events let eac
 adapter reset its progress meter without putting terminal behavior in the core.
 See [queue semantics](QUEUE.md) for persistence and recovery boundaries.
 
+## Desktop system tray
+
+The UI's `tray` adapter owns a native Windows [tray-icon](https://docs.rs/tray-icon/0.26.1/tray_icon/) handle and menu on the
+GUI thread. Native callbacks send typed actions and request an egui repaint to
+wake eframe. Download tasks still belong to the existing backend runtime.
+`App::logic` polls lifecycle/progress and handles tray actions even while the
+window is hidden; `App::ui` owns visible controls and window-close input.
+
+The close-to-tray preference is opt-in. Hiding requires an available tray and no
+open destination picker; Quit bypasses that preference and uses the normal
+cancellation/drain path. Native creation failures report a warning, and unsupported
+platforms return no tray adapter, preserving normal safe-close semantics. Menu
+availability and tooltips track queue/shutdown state. The icon and menu drop when
+the desktop app exits; there is no separate tray daemon.
+
 ## Desktop preferences and shutdown
 
 The desktop's `preferences` module owns a versioned, validated settings snapshot
@@ -237,7 +252,7 @@ corrupt or newer files. `settings` owns draft edits and commits them only on Sav
 Saved transfer defaults construct new download forms without changing existing
 jobs, and the initial folder is passed to the background native file picker.
 
-Close requests cancel transfers and wait for pending enqueue/file-picker replies.
+Quitting cancels transfers and waits for pending enqueue/file-picker replies.
 Controls are disabled while closing, and enqueue replies cannot restart the queue
 during shutdown. Finished session handles are reaped so task panics become visible
 error events; startup failures use a native error dialog. Transfer and persistence

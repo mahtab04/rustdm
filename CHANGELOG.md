@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Windows system tray
+
+- Added a native Windows tray icon with Show RustDM, Start queue, Pause queue,
+  and safe Quit actions, plus a sidebar Hide to tray button.
+- Added optional close-to-tray behavior, off by default and backward compatible
+  with older preferences. Hiding keeps downloads running; Quit still saves and
+  pauses before exiting. Unavailable trays fall back to normal safe quit.
+- Moved queue polling and tray dispatch into eframe background logic so hidden
+  windows continue handling commands without requiring UI painting.
+- Added hidden-logic HTTP/pause/shutdown tests and an interactive Windows tray
+  smoke script under tests/ui. Linux keeps its existing close behavior.
+
 ### Desktop reliability and packaging
 
 - Added Settings for persistent default connections, KiB/s limit, resume behavior,

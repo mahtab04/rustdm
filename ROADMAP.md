@@ -36,7 +36,8 @@ limitations, and passing supported-platform checks.
 - [x] Remembered transfer defaults and initial file picker folder.
 - [x] Safe shutdown during pending additions/pickers and visible worker/startup errors.
 - [x] Portable desktop preview packages with checksums and extracted-binary CI checks.
-- [ ] Remembered window position/size, tray behavior, and installer.
+- [x] Windows tray show/start/pause/quit, explicit hide, and optional close-to-tray.
+- [ ] Linux/macOS tray adapters, remembered window position/size, and installer.
 
 ## 3. Browser integration
 

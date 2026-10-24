@@ -34,12 +34,36 @@ These portable preview packages are not a new published release or an installer.
 Jobs execute sequentially; each job uses parallel range connections. Pause/resume
 has the same server-validator requirements as the CLI. A checksum mismatch keeps
 the destination absent. An already complete destination is never overwritten.
-Closing an active window requests pause and waits for the worker to stop before
+By default, closing an active window requests pause and waits for the worker to stop before
 exiting. Pending additions finish saving without starting another transfer while
 closing. If a native file picker is open, close it to finish quitting. Controls
 are disabled during shutdown. Unexpected download-task failures appear in the
 dashboard, and startup failures show a native error dialog.
 Partial files are retained beside the destination.
+
+## Windows system tray
+
+On Windows, RustDM creates a tray icon while the app runs. Click **Hide to tray**
+to keep downloads running in the background. Left-click the icon to restore the
+window, or right-click for **Show RustDM**, **Start queue**, **Pause queue**, and
+**Quit RustDM**. Windows may place the icon in its hidden-icons overflow.
+
+In **Settings**, enable **Close window to system tray (keep downloading)** to
+make the window's close button hide it. This is off by default, including for
+older preference files. The setting takes effect when saved. Hiding does not
+pause transfers or stop pending additions. Finish an open native destination
+picker before hiding the window.
+
+**Quit RustDM** always pauses the active transfer, waits for pending additions
+and file-picker replies, and exits, even with close-to-tray enabled. Open pickers
+must be closed to finish quitting. Start/pause menu actions reflect queue state;
+new starts are ignored once shutdown begins. The tooltip shows ready,
+downloading, or saving progress.
+
+Tray support currently targets Windows. Linux keeps normal pause-and-quit close
+behavior and disables the close-to-tray setting. If Windows tray creation fails,
+the dashboard shows a warning and uses safe quit instead of hiding the window.
+There is no automatic startup, hidden launch, or second download process.
 
 ## Connection details
 
@@ -95,5 +119,5 @@ than accumulating a message per chunk. Lifecycle events trigger fresh snapshots.
 Views, form validation, theme, and background integration are separate modules.
 All desktop tests live under repository-root `tests/ui/`.
 
-Tray behavior, per-job scheduling, remembered window preferences, installer,
+Linux/macOS tray support, per-job scheduling, remembered window preferences, installer,
 and macOS validation remain future work. Browser capture is a later milestone.

@@ -11,6 +11,7 @@ pub(crate) struct Preferences {
     pub(crate) connections: usize,
     pub(crate) limit_kib: Option<u64>,
     pub(crate) resume: bool,
+    pub(crate) close_to_tray: bool,
 }
 
 impl Default for Preferences {
@@ -21,6 +22,7 @@ impl Default for Preferences {
             connections: 4,
             limit_kib: None,
             resume: false,
+            close_to_tray: false,
         }
     }
 }

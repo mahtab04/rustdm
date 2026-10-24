@@ -37,6 +37,7 @@ fn saved_defaults_survive_restart_and_create_a_clean_download_form() {
         connections: 8,
         limit_kib: Some(1024),
         resume: true,
+        close_to_tray: true,
         ..Preferences::default()
     };
     store.save(&preferences).unwrap();
@@ -84,6 +85,10 @@ fn partial_preferences_use_defaults_and_invalid_updates_leave_the_snapshot_intac
     let mut loaded = store.load().unwrap();
     assert_eq!(loaded.connections, 6);
     assert_eq!(loaded.limit_kib, None);
+    assert!(
+        !loaded.close_to_tray,
+        "Older preferences keep normal close behavior"
+    );
     loaded.limit_kib = Some(0);
     assert!(store.save(&loaded).is_err());
     assert_eq!(store.load().unwrap().connections, 6);

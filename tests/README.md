@@ -11,7 +11,7 @@ component they exercise.
 | `core/queue/` | Queue persistence, locking, recovery, and history |
 | `cli/args.rs` | Argument parsing, rate validation, and command compatibility |
 | `cli/downloads.rs` | HTTP transfers, connection telemetry/retry/resume accounting, dynamic scheduling/resume, validator interoperability, checksum/publication safety, aggregate pacing, cancellation/resume, queue execution, and CLI subprocesses |
-| `ui/` | Desktop form validation, filtering, background HTTP execution, queue/worker errors, and preferences round-trip/corruption safety |
+| `ui/` | Desktop form validation, filtering, background HTTP execution, queue/worker errors, preferences round-trip/corruption safety, and hidden tray command/HTTP/shutdown handling |
 | `web/` | Reserved for web interface tests |
 | `browser/` | Reserved for browser integration tests |
 
@@ -46,3 +46,18 @@ discover files in this folder. Formatting, Clippy, and workspace tests follow
 the registered modules and targets. Fixtures should also live under `tests/`.
 Tests use local HTTP fixtures and temporary directories, with no public server
 dependency. Desktop tests are registered; web and browser suites will be wired in when those apps exist.
+
+For the native Windows tray, build the desktop release and run this from an
+interactive Windows desktop (it opens a test window and operates its tray menu):
+
+```powershell
+.\build.cmd build -p rustdm-ui --release --locked
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/ui/windows_tray_smoke.ps1
+```
+
+The smoke script uses its own fresh state directory under ignored `target/`,
+checks close-to-tray, restoration by click/menu, hidden Quit, and native-window
+cleanup, and captures only RustDM's tray menu. It simulates the notification
+messages delivered by Windows to tray-icon 0.26, including overflow icons. Use
+`-Binary PATH` or `-StateDirectory NEW_PATH` to override defaults. It does not run
+in headless CI; cross-platform Rust tests cover background command behavior.

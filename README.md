@@ -82,7 +82,10 @@ from the dashboard. Transfer options include connection count, speed limit, and
 SHA-256 verification. See [desktop usage and storage](apps/ui/README.md).
 Open **Settings** to save default connections, speed limit, resume behavior, and
 initial file picker folder. Defaults apply to new forms; existing jobs retain
-their options. Closing the window waits for active transfers and pending additions.
+their options. By default, closing the window pauses transfers and safely quits.
+On Windows, **Hide to tray** keeps downloads running. Enable **Close window to
+system tray** in Settings to make the close button hide the window too. Use the
+tray menu to show RustDM, start/pause the queue, or safely quit.
 
 CI artifacts include `rustdm-desktop-vVERSION-TARGET` portable packages alongside
 the CLI. Extract the desktop package and launch `rustdm-ui.exe` (Windows) or

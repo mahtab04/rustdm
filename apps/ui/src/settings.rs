@@ -50,6 +50,7 @@ impl Settings {
         &mut self,
         ctx: &egui::Context,
         store: &PreferencesStore,
+        tray_available: bool,
     ) -> Option<Preferences> {
         if !self.open {
             return None;
@@ -62,7 +63,7 @@ impl Settings {
             .resizable(false)
             .default_width(480.0)
             .show(ctx, |ui| {
-                ui.label("Defaults for new downloads. Existing jobs keep their options.");
+                ui.label("Transfer defaults apply to new downloads.");
                 ui.add_space(12.0);
                 ui.label("Initial file picker folder (optional)");
                 ui.add(
@@ -79,6 +80,18 @@ impl Settings {
                 ui.checkbox(
                     &mut self.draft.resume,
                     "Resume existing partial downloads by default",
+                );
+                ui.separator();
+                ui.label("Window behavior");
+                ui.add_enabled(
+                    tray_available,
+                    egui::Checkbox::new(
+                        &mut self.draft.close_to_tray,
+                        "Close window to system tray (keep downloading)",
+                    ),
+                )
+                .on_disabled_hover_text(
+                    "System tray support is available on Windows when a tray icon can be created.",
                 );
                 if let Some(error) = &self.error {
                     ui.colored_label(AMBER, error);
